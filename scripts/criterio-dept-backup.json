@@ -1,0 +1,34 @@
+[
+  {
+    "id": "cmwmbm2g8000f129rfxbs5dwb",
+    "nome": "Hora produtiva",
+    "peso": 30,
+    "departamentoId": null,
+    "global": true,
+    "descricao": null
+  },
+  {
+    "id": "cmwmbmcgo000h129re26fevqw",
+    "nome": "Orçamento",
+    "peso": 10,
+    "departamentoId": null,
+    "global": true,
+    "descricao": null
+  },
+  {
+    "id": "cmwmbvh1q0001suctqh70yak9",
+    "nome": "Obrigação e pagamento em dia / multa zero",
+    "peso": 20,
+    "departamentoId": "cmwmbfr5c0003129r7c5crzsq",
+    "global": false,
+    "descricao": null
+  },
+  {
+    "id": "cmwmbvv6s0003suct0fn6mc81",
+    "nome": "Qualidade da informação – retificação e ajustes",
+    "peso": 40,
+    "departamentoId": null,
+    "global": true,
+    "descricao": null
+  }
+]

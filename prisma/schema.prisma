@@ -1,0 +1,115 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Departamento {
+  id       String   @id @default(cuid())
+  nome     String
+  criadoEm DateTime @default(now())
+
+  gestores             Gestor[]
+  colaboradores        Colaborador[]
+  criterios            CriterioAvaliacao[]
+  avaliacoesColetivas  AvaliacaoDepartamento[]
+}
+
+model Gestor {
+  id          String  @id @default(cuid())
+  nome        String
+  email       String  @unique
+  senha       String
+  isDiretoria Boolean @default(false)
+
+  departamentos Departamento[]
+  avaliacoes    Avaliacao[]
+}
+
+model Colaborador {
+  id             String @id @default(cuid())
+  nome           String
+  cargo          String
+  departamentoId String
+  valorAlvo      Float  @default(0)
+
+  departamento Departamento @relation(fields: [departamentoId], references: [id])
+  avaliacoes   Avaliacao[]
+}
+
+model CriterioAvaliacao {
+  id             String  @id @default(cuid())
+  nome           String
+  peso           Float
+  descricao      String?
+  isGlobal       Boolean @default(false)
+  toleranciaZero Boolean @default(false)
+  tipoAvaliacao  String  @default("INDIVIDUAL")
+
+  departamentos           Departamento[]
+  itens                   ItemAvaliacao[]
+  itensDepartamento       ItemAvaliacaoDepartamento[]
+}
+
+model FaixaPagamento {
+  id                String @id @default(cuid())
+  minPercentual     Float
+  maxPercentual     Float
+  multiplicadorPeso Float
+  descricao         String
+}
+
+model Avaliacao {
+  id            String   @id @default(cuid())
+  data          DateTime @default(now())
+  colaboradorId String
+  gestorId      String
+  notaFinal     Float
+  observacoes   String?
+  mes           Int      @default(1)
+  ano           Int      @default(2026)
+
+  colaborador Colaborador     @relation(fields: [colaboradorId], references: [id])
+  gestor      Gestor          @relation(fields: [gestorId], references: [id])
+  itens       ItemAvaliacao[]
+
+  @@unique([colaboradorId, mes, ano])
+}
+
+model ItemAvaliacao {
+  id          String @id @default(cuid())
+  avaliacaoId String
+  criterioId  String
+  notaObtida  Float
+
+  avaliacao Avaliacao         @relation(fields: [avaliacaoId], references: [id])
+  criterio  CriterioAvaliacao @relation(fields: [criterioId], references: [id])
+}
+
+model AvaliacaoDepartamento {
+  id             String   @id @default(cuid())
+  departamentoId String
+  mes            Int
+  ano            Int
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  departamento Departamento               @relation(fields: [departamentoId], references: [id])
+  itens        ItemAvaliacaoDepartamento[]
+
+  @@unique([departamentoId, mes, ano])
+}
+
+model ItemAvaliacaoDepartamento {
+  id                      String @id @default(cuid())
+  avaliacaoDepartamentoId String
+  criterioId              String
+  nota                    Float
+  peso                    Float
+
+  avaliacaoDepartamento AvaliacaoDepartamento @relation(fields: [avaliacaoDepartamentoId], references: [id])
+  criterio              CriterioAvaliacao     @relation(fields: [criterioId], references: [id])
+}

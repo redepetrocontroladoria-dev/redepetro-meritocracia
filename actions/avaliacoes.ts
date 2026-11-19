@@ -631,3 +631,95 @@ export async function excluirAvaliacao(avaliacaoId: string) {
   revalidatePath("/bonus");
   revalidatePath("/");
 }
+
+export async function excluirAvaliacaoDepartamento(input: {
+  departamentoId?: string;
+  mes?: number;
+  ano?: number;
+  avaliacaoDepartamentoId?: string;
+}): Promise<SalvarAvaliacaoResult> {
+  try {
+    const gestor = await getSessionGestor();
+    if (!gestor) {
+      return { ok: false, error: "Sessão expirada. Faça login novamente." };
+    }
+
+    const avaliacaoId = String(input.avaliacaoDepartamentoId ?? "").trim();
+    const departamentoId = String(input.departamentoId ?? "").trim();
+    const mes = Number(input.mes);
+    const ano = Number(input.ano);
+
+    let existente = avaliacaoId
+      ? await prisma.avaliacaoDepartamento.findUnique({
+          where: { id: avaliacaoId },
+          include: {
+            departamento: { select: { id: true, nome: true } },
+            _count: { select: { itens: true } },
+          },
+        })
+      : null;
+
+    if (!existente && departamentoId) {
+      if (!Number.isInteger(mes) || mes < 1 || mes > 12) {
+        return { ok: false, error: "Mês inválido." };
+      }
+      if (!Number.isInteger(ano) || ano < 2000 || ano > 2100) {
+        return { ok: false, error: "Ano inválido." };
+      }
+      existente = await prisma.avaliacaoDepartamento.findUnique({
+        where: {
+          departamentoId_mes_ano: { departamentoId, mes, ano },
+        },
+        include: {
+          departamento: { select: { id: true, nome: true } },
+          _count: { select: { itens: true } },
+        },
+      });
+    }
+
+    if (!existente) {
+      return {
+        ok: false,
+        error: "Lançamento coletivo não encontrado para esta competência.",
+      };
+    }
+
+    if (
+      !(await gestorTemAcessoDepartamento(gestor, existente.departamentoId))
+    ) {
+      return {
+        ok: false,
+        error:
+          "Você só pode excluir lançamentos coletivos dos seus departamentos vinculados.",
+      };
+    }
+
+    await prisma.itemAvaliacaoDepartamento.deleteMany({
+      where: { avaliacaoDepartamentoId: existente.id },
+    });
+    await prisma.avaliacaoDepartamento.delete({
+      where: { id: existente.id },
+    });
+
+    await recalcularNotasDepartamento(
+      existente.departamentoId,
+      existente.mes,
+      existente.ano,
+    );
+
+    revalidatePath("/avaliar");
+    revalidatePath("/relatorios");
+    revalidatePath("/bonus");
+    revalidatePath("/");
+
+    return { ok: true, atualizado: true };
+  } catch (error) {
+    return {
+      ok: false,
+      error:
+        error instanceof Error
+          ? error.message
+          : "Erro ao excluir lançamento coletivo.",
+    };
+  }
+}

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
+  excluirAvaliacaoDepartamento,
   getAvaliacaoDepartamento,
   salvarAvaliacaoDepartamento,
 } from "@/actions/avaliacoes";
@@ -59,6 +60,7 @@ export function AvaliacaoDepartamentoForm({
   );
   const [erro, setErro] = useState<string | null>(null);
   const [sucesso, setSucesso] = useState<string | null>(null);
+  const [lancamentoExistente, setLancamentoExistente] = useState(false);
   const [pending, startTransition] = useTransition();
 
   const criteriosColetivos = useMemo(() => {
@@ -81,19 +83,23 @@ export function AvaliacaoDepartamentoForm({
     if (!departamentoId) {
       setNotas({});
       setJustificativas({});
+      setLancamentoExistente(false);
       return;
     }
 
     const padrao = notasPadrao(criteriosColetivos);
     setNotas(padrao);
     setJustificativas({});
+    setLancamentoExistente(false);
 
     getAvaliacaoDepartamento(departamentoId, mes, ano).then((existente) => {
       if (!ativo) return;
       if (!existente) {
         setNotas(padrao);
+        setLancamentoExistente(false);
         return;
       }
+      setLancamentoExistente(true);
       const carregadas = Object.fromEntries(
         existente.itens.map((item) => [item.criterioId, String(item.nota)]),
       );
@@ -178,6 +184,38 @@ export function AvaliacaoDepartamentoForm({
           ? "Metas coletivas atualizadas."
           : "Metas coletivas salvas.",
       );
+      setLancamentoExistente(true);
+      onColetivasSalvas?.();
+      router.refresh();
+    });
+  }
+
+  function handleExcluirLancamento() {
+    if (!departamentoId || !lancamentoExistente) return;
+    if (
+      !window.confirm(
+        "Excluir o lançamento coletivo deste departamento nesta competência?\n\nAs metas coletivas serão removidas e as notas individuais consolidadas serão recalculadas.",
+      )
+    ) {
+      return;
+    }
+
+    setErro(null);
+    setSucesso(null);
+    startTransition(async () => {
+      const result = await excluirAvaliacaoDepartamento({
+        departamentoId,
+        mes,
+        ano,
+      });
+      if (!result.ok) {
+        setErro(result.error);
+        return;
+      }
+      setNotas(notasPadrao(criteriosColetivos));
+      setJustificativas({});
+      setLancamentoExistente(false);
+      setSucesso("Lançamento coletivo excluído com sucesso.");
       onColetivasSalvas?.();
       router.refresh();
     });
@@ -341,13 +379,25 @@ export function AvaliacaoDepartamentoForm({
         </p>
       ) : null}
 
-      <button
-        type="submit"
-        disabled={pending || Boolean(motivoBloqueio)}
-        className="rounded-md bg-brand-primary px-4 py-2.5 text-sm font-medium text-white hover:bg-red-800 disabled:opacity-60"
-      >
-        {pending ? "Salvando..." : "Salvar Metas Coletivas"}
-      </button>
+      <div className="flex flex-wrap gap-2">
+        <button
+          type="submit"
+          disabled={pending || Boolean(motivoBloqueio)}
+          className="rounded-md bg-brand-primary px-4 py-2.5 text-sm font-medium text-white hover:bg-red-800 disabled:opacity-60"
+        >
+          {pending ? "Salvando..." : "Salvar Metas Coletivas"}
+        </button>
+        {lancamentoExistente ? (
+          <button
+            type="button"
+            disabled={pending}
+            onClick={handleExcluirLancamento}
+            className="rounded-md border border-red-200 bg-white px-4 py-2.5 text-sm font-medium text-red-700 hover:bg-red-50 disabled:opacity-60"
+          >
+            Excluir Lançamento Coletivo
+          </button>
+        ) : null}
+      </div>
     </form>
   );
 }

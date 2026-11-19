@@ -1,16 +1,15 @@
+import { Suspense } from "react";
 import { redirect } from "next/navigation";
 import { getSessionGestor } from "@/actions/auth";
 import { BonusApuracao } from "@/components/BonusApuracao";
+import { BonusFiltros } from "@/components/BonusFiltros";
 import { consolidarItensAvaliacao } from "@/lib/avaliacaoConsolidada";
 import {
-  BASES_VALOR_ALVO,
   formatarLabelCiclo,
-  PERIODICIDADES,
   parseBaseValorAlvo,
   parsePeriodicidade,
   resolverIntervaloCiclo,
 } from "@/lib/cicloBonus";
-import { MESES } from "@/lib/competencia";
 import { ensureFaixasPagamento } from "@/lib/faixasPagamento";
 import { prisma } from "@/lib/prisma";
 
@@ -256,270 +255,22 @@ export default async function BonusPage({ searchParams }: BonusPageProps) {
         </p>
       </div>
 
-      <form className="space-y-4 rounded-lg border border-zinc-200 bg-white p-4 shadow-sm">
-        <div className="flex flex-wrap items-end gap-3">
-          <label className="block min-w-[14rem] flex-1 space-y-1.5">
-            <span className="text-sm font-medium text-zinc-700">
-              Periodicidade / Ciclo
-            </span>
-            <select
-              name="ciclo"
-              defaultValue={ciclo}
-              className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-zinc-200"
-            >
-              {PERIODICIDADES.map((item) => (
-                <option key={item.value} value={item.value}>
-                  {item.label}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label className="block min-w-[16rem] flex-[1.4] space-y-1.5">
-            <span className="text-sm font-medium text-zinc-700">
-              Base do Valor-Alvo
-            </span>
-            <select
-              name="baseValor"
-              defaultValue={baseValor}
-              className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-zinc-200"
-            >
-              {BASES_VALOR_ALVO.map((item) => (
-                <option key={item.value} value={item.value}>
-                  {item.label}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          {departamentosDisponiveis.length > 0 ? (
-            <label className="block min-w-[14rem] flex-1 space-y-1.5">
-              <span className="text-sm font-medium text-zinc-700">
-                Departamento
-              </span>
-              <select
-                name="departamentoId"
-                defaultValue={filtroValido}
-                className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-zinc-200"
-              >
-                <option value="">
-                  {gestor.isDiretoria
-                    ? "Todos"
-                    : "Todos os meus departamentos"}
-                </option>
-                {departamentosDisponiveis.map((departamento) => (
-                  <option key={departamento.id} value={departamento.id}>
-                    {departamento.nome}
-                  </option>
-                ))}
-              </select>
-            </label>
-          ) : null}
-        </div>
-
-        <div className="flex flex-wrap items-end gap-3">
-          {ciclo === "mensal" ? (
-            <>
-              <label className="block min-w-[10rem] space-y-1.5">
-                <span className="text-sm font-medium text-zinc-700">Mês</span>
-                <select
-                  name="mes"
-                  defaultValue={String(mes)}
-                  className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-zinc-200"
-                >
-                  {MESES.map((item) => (
-                    <option key={item.value} value={item.value}>
-                      {item.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="block min-w-[8rem] space-y-1.5">
-                <span className="text-sm font-medium text-zinc-700">Ano</span>
-                <select
-                  name="ano"
-                  defaultValue={String(ano)}
-                  className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-zinc-200"
-                >
-                  {anos.map((item) => (
-                    <option key={item} value={item}>
-                      {item}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </>
-          ) : null}
-
-          {ciclo === "trimestral" ? (
-            <>
-              <label className="block min-w-[10rem] space-y-1.5">
-                <span className="text-sm font-medium text-zinc-700">
-                  Trimestre
-                </span>
-                <select
-                  name="trimestre"
-                  defaultValue={String(trimestre)}
-                  className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-zinc-200"
-                >
-                  <option value="1">Q1 — Jan a Mar</option>
-                  <option value="2">Q2 — Abr a Jun</option>
-                  <option value="3">Q3 — Jul a Set</option>
-                  <option value="4">Q4 — Out a Dez</option>
-                </select>
-              </label>
-              <label className="block min-w-[8rem] space-y-1.5">
-                <span className="text-sm font-medium text-zinc-700">Ano</span>
-                <select
-                  name="ano"
-                  defaultValue={String(ano)}
-                  className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-zinc-200"
-                >
-                  {anos.map((item) => (
-                    <option key={item} value={item}>
-                      {item}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </>
-          ) : null}
-
-          {ciclo === "semestral" ? (
-            <>
-              <label className="block min-w-[12rem] space-y-1.5">
-                <span className="text-sm font-medium text-zinc-700">
-                  Semestre
-                </span>
-                <select
-                  name="semestre"
-                  defaultValue={String(semestre)}
-                  className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-zinc-200"
-                >
-                  <option value="1">1º Semestre — Jan a Jun</option>
-                  <option value="2">2º Semestre — Jul a Dez</option>
-                </select>
-              </label>
-              <label className="block min-w-[8rem] space-y-1.5">
-                <span className="text-sm font-medium text-zinc-700">Ano</span>
-                <select
-                  name="ano"
-                  defaultValue={String(ano)}
-                  className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-zinc-200"
-                >
-                  {anos.map((item) => (
-                    <option key={item} value={item}>
-                      {item}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </>
-          ) : null}
-
-          {ciclo === "anual" ? (
-            <label className="block min-w-[8rem] space-y-1.5">
-              <span className="text-sm font-medium text-zinc-700">Ano</span>
-              <select
-                name="ano"
-                defaultValue={String(ano)}
-                className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-zinc-200"
-              >
-                {anos.map((item) => (
-                  <option key={item} value={item}>
-                    {item}
-                  </option>
-                ))}
-              </select>
-            </label>
-          ) : null}
-
-          {ciclo === "personalizado" ? (
-            <>
-              <label className="block min-w-[9rem] space-y-1.5">
-                <span className="text-sm font-medium text-zinc-700">
-                  Mês inicial
-                </span>
-                <select
-                  name="mesInicio"
-                  defaultValue={String(mesInicio)}
-                  className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-zinc-200"
-                >
-                  {MESES.map((item) => (
-                    <option key={item.value} value={item.value}>
-                      {item.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="block min-w-[8rem] space-y-1.5">
-                <span className="text-sm font-medium text-zinc-700">
-                  Ano inicial
-                </span>
-                <select
-                  name="anoInicio"
-                  defaultValue={String(anoInicio)}
-                  className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-zinc-200"
-                >
-                  {anos.map((item) => (
-                    <option key={item} value={item}>
-                      {item}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="block min-w-[9rem] space-y-1.5">
-                <span className="text-sm font-medium text-zinc-700">
-                  Mês final
-                </span>
-                <select
-                  name="mesFim"
-                  defaultValue={String(mesFim)}
-                  className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-zinc-200"
-                >
-                  {MESES.map((item) => (
-                    <option key={item.value} value={item.value}>
-                      {item.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="block min-w-[8rem] space-y-1.5">
-                <span className="text-sm font-medium text-zinc-700">
-                  Ano final
-                </span>
-                <select
-                  name="anoFim"
-                  defaultValue={String(anoFim)}
-                  className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-zinc-200"
-                >
-                  {anos.map((item) => (
-                    <option key={item} value={item}>
-                      {item}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </>
-          ) : null}
-
-          <button
-            type="submit"
-            className="rounded-md bg-brand-primary px-4 py-2 text-sm font-medium text-white transition hover:bg-red-800"
-          >
-            Filtrar
-          </button>
-        </div>
-
-        <p className="text-xs text-zinc-500">
-          Período selecionado:{" "}
-          <span className="font-semibold text-brand-secondary">
-            {competenciaLabel}
-          </span>{" "}
-          ({competencias.length}{" "}
-          {competencias.length === 1 ? "mês" : "meses"})
-        </p>
-      </form>
+      <Suspense
+        fallback={
+          <div className="rounded-lg border border-zinc-200 bg-white p-4 text-sm text-zinc-500 shadow-sm">
+            Carregando filtros…
+          </div>
+        }
+      >
+        <BonusFiltros
+          departamentos={departamentosDisponiveis.map((d) => ({
+            id: d.id,
+            nome: d.nome,
+          }))}
+          isDiretoria={gestor.isDiretoria}
+          anos={anos}
+        />
+      </Suspense>
 
       <BonusApuracao
         linhas={linhas}

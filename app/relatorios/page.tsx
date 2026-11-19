@@ -146,6 +146,8 @@ export default async function RelatoriosPage({
                 }),
           },
       include: {
+        departamento: { select: { id: true, nome: true } },
+        avaliadoPor: { select: { nome: true } },
         itens: {
           include: {
             criterio: {
@@ -598,15 +600,33 @@ export default async function RelatoriosPage({
 
       <section className="overflow-hidden rounded-lg border border-zinc-200 bg-white p-5 shadow-sm">
         <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-brand-secondary">
-          Média Individual por Colaborador
+          Detalhamento de Avaliações
         </h2>
 
-        {dados.length === 0 ? (
+        {dados.length === 0 && avaliacoesColetivas.length === 0 ? (
           <p className="rounded-md border border-dashed border-zinc-200 px-4 py-10 text-center text-sm text-zinc-500">
             Nenhuma avaliação encontrada.
           </p>
         ) : (
-          <TabelaAvaliacoesDetalhe dados={dados} />
+          <TabelaAvaliacoesDetalhe
+            dados={dados}
+            coletivos={avaliacoesColetivas.map((coletiva) => ({
+              id: coletiva.id,
+              departamentoId: coletiva.departamentoId,
+              departamento: coletiva.departamento.nome,
+              competencia: formatarCompetencia(coletiva.mes, coletiva.ano),
+              mes: coletiva.mes,
+              ano: coletiva.ano,
+              avaliadoPorNome: coletiva.avaliadoPor?.nome ?? null,
+              itens: coletiva.itens.map((item) => ({
+                criterioId: item.criterioId,
+                criterioNome: item.criterio.nome,
+                peso: item.peso || item.criterio.peso,
+                nota: item.nota,
+                justificativa: item.justificativa,
+              })),
+            }))}
+          />
         )}
       </section>
     </main>

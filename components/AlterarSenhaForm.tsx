@@ -1,11 +1,13 @@
 "use client";
 
 import { useActionState } from "react";
-import { alterarPropriaSenha } from "@/actions/auth";
+import { alterarPropriaSenha, type AlterarSenhaState } from "@/actions/auth";
 import { Panel, SubmitButton } from "@/components/ui";
 
+const initialState: AlterarSenhaState = null;
+
 export function AlterarSenhaForm() {
-  const [state, formAction] = useActionState(alterarPropriaSenha, null);
+  const [state, formAction] = useActionState(alterarPropriaSenha, initialState);
 
   return (
     <Panel title="Alterar senha">
@@ -45,9 +47,9 @@ export function AlterarSenhaForm() {
           />
         </label>
 
-        {state?.ok && state.success ? (
+        {state?.ok && state.message ? (
           <p className="rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
-            {state.success}
+            {state.message}
           </p>
         ) : null}
 

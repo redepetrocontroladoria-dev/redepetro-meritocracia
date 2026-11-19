@@ -32,7 +32,7 @@ export type SessionGestor = {
 export type AlterarSenhaState = {
   ok: boolean;
   error?: string;
-  success?: string;
+  message?: string;
 } | null;
 
 export async function ensureDefaultAdmin() {
@@ -174,21 +174,25 @@ export async function alterarPropriaSenha(
     return { ok: false, error: "A nova senha deve ter pelo menos 4 caracteres." };
   }
 
-  const registro = await prisma.gestor.findUnique({
-    where: { id: gestor.id },
-    select: { senha: true },
-  });
+  try {
+    const registro = await prisma.gestor.findUnique({
+      where: { id: gestor.id },
+      select: { senha: true },
+    });
 
-  if (!registro || !bcrypt.compareSync(senhaAtual, registro.senha)) {
-    return { ok: false, error: "Senha atual incorreta." };
+    if (!registro || !bcrypt.compareSync(senhaAtual, registro.senha)) {
+      return { ok: false, error: "Senha atual incorreta." };
+    }
+
+    await prisma.gestor.update({
+      where: { id: gestor.id },
+      data: { senha: bcrypt.hashSync(novaSenha, 10) },
+    });
+  } catch {
+    return { ok: false, error: "Erro ao atualizar senha" };
   }
 
-  await prisma.gestor.update({
-    where: { id: gestor.id },
-    data: { senha: bcrypt.hashSync(novaSenha, 10) },
-  });
-
-  return { ok: true, success: "Senha alterada com sucesso." };
+  return { ok: true, message: "Senha alterada com sucesso." };
 }
 
 export async function criarGestorInicial() {

@@ -25,6 +25,11 @@ type CriterioOption = {
 
 const agora = new Date();
 const ANOS = Array.from({ length: 6 }, (_, i) => agora.getFullYear() - 2 + i);
+const NOTA_PADRAO = "10";
+
+function notasPadrao(criterios: CriterioOption[]) {
+  return Object.fromEntries(criterios.map((c) => [c.id, NOTA_PADRAO]));
+}
 
 export function AvaliacaoDepartamentoForm({
   departamentos,
@@ -35,6 +40,7 @@ export function AvaliacaoDepartamentoForm({
   onDepartamentoChange,
   onMesChange,
   onAnoChange,
+  onColetivasSalvas,
 }: {
   departamentos: DepartamentoOption[];
   criterios: CriterioOption[];
@@ -44,6 +50,7 @@ export function AvaliacaoDepartamentoForm({
   onDepartamentoChange: (id: string) => void;
   onMesChange: (mes: number) => void;
   onAnoChange: (ano: number) => void;
+  onColetivasSalvas?: () => void;
 }) {
   const router = useRouter();
   const [notas, setNotas] = useState<Record<string, string>>({});
@@ -64,22 +71,36 @@ export function AvaliacaoDepartamentoForm({
     );
   }, [criterios, departamentoId]);
 
+  const idsCriteriosColetivos = criteriosColetivos.map((c) => c.id).join("|");
+
   useEffect(() => {
     let ativo = true;
-    setNotas({});
-    setJustificativas({});
     setErro(null);
     setSucesso(null);
 
-    if (!departamentoId) return;
+    if (!departamentoId) {
+      setNotas({});
+      setJustificativas({});
+      return;
+    }
+
+    const padrao = notasPadrao(criteriosColetivos);
+    setNotas(padrao);
+    setJustificativas({});
 
     getAvaliacaoDepartamento(departamentoId, mes, ano).then((existente) => {
-      if (!ativo || !existente) return;
-      setNotas(
-        Object.fromEntries(
-          existente.itens.map((item) => [item.criterioId, String(item.nota)]),
-        ),
+      if (!ativo) return;
+      if (!existente) {
+        setNotas(padrao);
+        return;
+      }
+      const carregadas = Object.fromEntries(
+        existente.itens.map((item) => [item.criterioId, String(item.nota)]),
       );
+      setNotas({
+        ...padrao,
+        ...carregadas,
+      });
       setJustificativas(
         Object.fromEntries(
           existente.itens.map((item) => [
@@ -93,7 +114,33 @@ export function AvaliacaoDepartamentoForm({
     return () => {
       ativo = false;
     };
-  }, [departamentoId, mes, ano]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [departamentoId, mes, ano, idsCriteriosColetivos]);
+
+  const criteriosSemJustificativa = useMemo(() => {
+    return criteriosColetivos.filter((criterio) => {
+      const nota = Number(String(notas[criterio.id] ?? "").replace(",", "."));
+      return (
+        Number.isFinite(nota) &&
+        exigeJustificativa(nota, Boolean(criterio.toleranciaZero)) &&
+        !String(justificativas[criterio.id] ?? "").trim()
+      );
+    });
+  }, [criteriosColetivos, notas, justificativas]);
+
+  const notasIncompletas = criteriosColetivos.some((criterio) => {
+    const nota = Number(String(notas[criterio.id] ?? "").replace(",", "."));
+    return !Number.isFinite(nota) || nota < 0 || nota > 10;
+  });
+
+  const motivoBloqueio =
+    criteriosColetivos.length === 0
+      ? "Não há critérios coletivos para este departamento."
+      : notasIncompletas
+        ? "Informe notas de 0.0 a 10.0 em todos os critérios coletivos."
+        : criteriosSemJustificativa.length > 0
+          ? "Preencha a justificativa nos critérios com nota abaixo de 10.0 para habilitar o salvamento."
+          : null;
 
   function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
@@ -104,8 +151,8 @@ export function AvaliacaoDepartamentoForm({
       setErro("Selecione um departamento.");
       return;
     }
-    if (criteriosColetivos.length === 0) {
-      setErro("Não há critérios coletivos para este departamento.");
+    if (motivoBloqueio) {
+      setErro(motivoBloqueio);
       return;
     }
 
@@ -114,31 +161,6 @@ export function AvaliacaoDepartamentoForm({
       notaObtida: Number(String(notas[criterio.id] ?? "").replace(",", ".")),
       justificativa: justificativas[criterio.id] ?? "",
     }));
-
-    if (
-      itens.some(
-        (item) =>
-          !Number.isFinite(item.notaObtida) ||
-          item.notaObtida < 0 ||
-          item.notaObtida > 10,
-      )
-    ) {
-      setErro("Informe notas de 0.0 a 10.0 para todos os critérios coletivos.");
-      return;
-    }
-
-    for (const criterio of criteriosColetivos) {
-      const nota = Number(String(notas[criterio.id] ?? "").replace(",", "."));
-      if (
-        exigeJustificativa(nota, Boolean(criterio.toleranciaZero)) &&
-        !String(justificativas[criterio.id] ?? "").trim()
-      ) {
-        setErro(
-          `Justificativa obrigatória para "${criterio.nome}" (nota < 10.0).`,
-        );
-        return;
-      }
-    }
 
     startTransition(async () => {
       const result = await salvarAvaliacaoDepartamento({
@@ -156,6 +178,7 @@ export function AvaliacaoDepartamentoForm({
           ? "Metas coletivas atualizadas."
           : "Metas coletivas salvas.",
       );
+      onColetivasSalvas?.();
       router.refresh();
     });
   }
@@ -259,7 +282,7 @@ export function AvaliacaoDepartamentoForm({
                   </p>
                 ) : null}
                 <SeletorNotaDegrau
-                  valor={notas[criterio.id] ?? ""}
+                  valor={notas[criterio.id] ?? NOTA_PADRAO}
                   onChange={(valor) =>
                     setNotas((atual) => ({
                       ...atual,
@@ -312,10 +335,15 @@ export function AvaliacaoDepartamentoForm({
           {sucesso}
         </p>
       ) : null}
+      {!erro && motivoBloqueio ? (
+        <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+          {motivoBloqueio}
+        </p>
+      ) : null}
 
       <button
         type="submit"
-        disabled={pending || criteriosColetivos.length === 0}
+        disabled={pending || Boolean(motivoBloqueio)}
         className="rounded-md bg-brand-primary px-4 py-2.5 text-sm font-medium text-white hover:bg-red-800 disabled:opacity-60"
       >
         {pending ? "Salvando..." : "Salvar Metas Coletivas"}

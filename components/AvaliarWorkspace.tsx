@@ -64,6 +64,7 @@ export function AvaliarWorkspace({
     edicaoInicial?.mes ?? agora.getMonth() + 1,
   );
   const [ano, setAno] = useState(edicaoInicial?.ano ?? agora.getFullYear());
+  const [coletivasRevision, setColetivasRevision] = useState(0);
 
   return (
     <div className="space-y-8">
@@ -101,6 +102,7 @@ export function AvaliarWorkspace({
         onDepartamentoChange={setDepartamentoId}
         onMesChange={setMes}
         onAnoChange={setAno}
+        onColetivasSalvas={() => setColetivasRevision((n) => n + 1)}
       />
 
       <AvaliacaoForm
@@ -109,6 +111,7 @@ export function AvaliarWorkspace({
         departamentoId={departamentoId}
         mes={mes}
         ano={ano}
+        coletivasRevision={coletivasRevision}
         edicaoInicial={edicaoInicial}
       />
     </div>

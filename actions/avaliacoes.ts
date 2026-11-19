@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { getSessionGestor } from "@/actions/auth";
+import { getSessionGestor, type SessionGestor } from "@/actions/auth";
 import {
   calcularNotaFinalConsolidada,
   exigeJustificativa,
@@ -39,6 +39,36 @@ function criterioNoDepartamento(
     criterio.isGlobal ||
     criterio.departamentos.some((d) => d.id === departamentoId)
   );
+}
+
+/** Lê todos os departamentos vinculados ao gestor (relação N:N), não um id legado. */
+async function idsDepartamentosDoGestor(gestor: SessionGestor) {
+  if (gestor.isDiretoria) return null;
+
+  const atualizado = await prisma.gestor.findUnique({
+    where: { id: gestor.id },
+    select: {
+      departamentos: { select: { id: true } },
+    },
+  });
+
+  const ids = new Set(
+    (atualizado?.departamentos ?? []).map((item) => item.id),
+  );
+  for (const id of gestor.departamentoIds ?? []) {
+    if (id) ids.add(id);
+  }
+  return ids;
+}
+
+async function gestorTemAcessoDepartamento(
+  gestor: SessionGestor,
+  departamentoId: string,
+) {
+  if (gestor.isDiretoria) return true;
+  if (!departamentoId) return false;
+  const ids = await idsDepartamentosDoGestor(gestor);
+  return ids?.has(departamentoId) ?? false;
 }
 
 function validarJustificativas(
@@ -166,8 +196,10 @@ export async function salvarAvaliacao(
     }
 
     if (
-      !gestor.isDiretoria &&
-      !gestor.departamentoIds.includes(colaborador.departamentoId)
+      !(await gestorTemAcessoDepartamento(
+        gestor,
+        colaborador.departamentoId,
+      ))
     ) {
       return {
         ok: false,
@@ -359,10 +391,7 @@ export async function salvarAvaliacaoDepartamento(input: {
     if (!departamentoId) {
       return { ok: false, error: "Selecione um departamento." };
     }
-    if (
-      !gestor.isDiretoria &&
-      !gestor.departamentoIds.includes(departamentoId)
-    ) {
+    if (!(await gestorTemAcessoDepartamento(gestor, departamentoId))) {
       return {
         ok: false,
         error: "Você só pode lançar metas dos seus departamentos vinculados.",
@@ -480,9 +509,18 @@ export async function getAvaliacaoDepartamento(
   mes: number,
   ano: number,
 ) {
+  const gestor = await getSessionGestor();
+  if (!gestor) return null;
+
+  const deptId = String(departamentoId ?? "").trim();
+  if (!deptId) return null;
+  if (!(await gestorTemAcessoDepartamento(gestor, deptId))) {
+    return null;
+  }
+
   return prisma.avaliacaoDepartamento.findUnique({
     where: {
-      departamentoId_mes_ano: { departamentoId, mes, ano },
+      departamentoId_mes_ano: { departamentoId: deptId, mes, ano },
     },
     include: {
       itens: {
@@ -537,8 +575,10 @@ export async function getAvaliacaoParaEdicao(avaliacaoId: string) {
   if (!avaliacao) return null;
 
   if (
-    !gestor.isDiretoria &&
-    !gestor.departamentoIds.includes(avaliacao.colaborador.departamentoId)
+    !(await gestorTemAcessoDepartamento(
+      gestor,
+      avaliacao.colaborador.departamentoId,
+    ))
   ) {
     return null;
   }
@@ -573,8 +613,10 @@ export async function excluirAvaliacao(avaliacaoId: string) {
   if (!avaliacao) throw new Error("Avaliação não encontrada.");
 
   if (
-    !gestor.isDiretoria &&
-    !gestor.departamentoIds.includes(avaliacao.colaborador.departamentoId)
+    !(await gestorTemAcessoDepartamento(
+      gestor,
+      avaliacao.colaborador.departamentoId,
+    ))
   ) {
     throw new Error(
       "Você só pode excluir avaliações dos seus departamentos vinculados.",

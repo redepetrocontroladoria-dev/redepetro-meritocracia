@@ -50,8 +50,15 @@ type AvaliacaoFormProps = {
   departamentoId: string;
   mes: number;
   ano: number;
+  coletivasRevision?: number;
   edicaoInicial?: EdicaoInicial | null;
 };
+
+const NOTA_PADRAO = "10";
+
+function notasPadrao(criterios: CriterioOption[]) {
+  return Object.fromEntries(criterios.map((c) => [c.id, NOTA_PADRAO]));
+}
 
 export function AvaliacaoForm({
   colaboradores,
@@ -59,6 +66,7 @@ export function AvaliacaoForm({
   departamentoId,
   mes,
   ano,
+  coletivasRevision = 0,
   edicaoInicial = null,
 }: AvaliacaoFormProps) {
   const router = useRouter();
@@ -89,7 +97,6 @@ export function AvaliacaoForm({
   const [justColetivas, setJustColetivas] = useState<Record<string, string>>(
     {},
   );
-  const [coletivasCarregadas, setColetivasCarregadas] = useState(false);
   const [pending, startTransition] = useTransition();
 
   const colaboradoresDoDepartamento = useMemo(
@@ -127,7 +134,6 @@ export function AvaliacaoForm({
     setErro(null);
     setNotasColetivas({});
     setJustColetivas({});
-    setColetivasCarregadas(false);
   }, [colaboradorId, colaboradoresDoDepartamento]);
 
   const criteriosDoSetor = useMemo(() => {
@@ -167,10 +173,28 @@ export function AvaliacaoForm({
     criteriosColetivos.length === 0 ||
     criteriosColetivos.every((c) => Number.isFinite(notasColetivas[c.id]));
 
+  useEffect(() => {
+    if (!colaboradorId || criteriosIndividuais.length === 0) return;
+    setNotas((atual) => {
+      let mudou = false;
+      const next = { ...atual };
+      for (const criterio of criteriosIndividuais) {
+        const valor = String(next[criterio.id] ?? "").trim();
+        if (!valor) {
+          next[criterio.id] = NOTA_PADRAO;
+          mudou = true;
+        }
+      }
+      return mudou ? next : atual;
+    });
+  }, [colaboradorId, criteriosIndividuais]);
+
   const itensIndividuais = useMemo(() => {
     return criteriosIndividuais.map((criterio) => {
-      const nota = Number(String(notas[criterio.id] ?? "").replace(",", "."));
-      const notaValida = Number.isFinite(nota) ? nota : 0;
+      const nota = Number(
+        String(notas[criterio.id] ?? NOTA_PADRAO).replace(",", "."),
+      );
+      const notaValida = Number.isFinite(nota) ? nota : 10;
       const parcial =
         somaPesos > 0 ? (notaValida * criterio.peso) / somaPesos : 0;
       return { criterio, nota: notaValida, parcial };
@@ -191,6 +215,31 @@ export function AvaliacaoForm({
   );
   const classificacao = classificarNota(notaFinal);
 
+  const criteriosSemJustificativa = useMemo(() => {
+    return criteriosIndividuais.filter((criterio) => {
+      const nota = Number(
+        String(notas[criterio.id] ?? NOTA_PADRAO).replace(",", "."),
+      );
+      return (
+        Number.isFinite(nota) &&
+        exigeJustificativa(nota, Boolean(criterio.toleranciaZero)) &&
+        !String(justificativas[criterio.id] ?? "").trim()
+      );
+    });
+  }, [criteriosIndividuais, notas, justificativas]);
+
+  const motivoBloqueio = !colaboradorId
+    ? "Selecione um colaborador."
+    : criteriosIndividuais.length === 0
+      ? "Não há critérios individuais para este departamento."
+      : !pesosCompletos
+        ? `A soma dos pesos aplicáveis é ${somaPesos.toFixed(1)}% (deve ser 100%).`
+        : criteriosColetivos.length > 0 && !coletivasCompletas
+          ? "As metas coletivas do departamento ainda não foram preenchidas para esta competência."
+          : criteriosSemJustificativa.length > 0
+            ? "Preencha a justificativa nos critérios com nota abaixo de 10.0 para habilitar o salvamento."
+            : null;
+
   useEffect(() => {
     let ativo = true;
 
@@ -198,7 +247,6 @@ export function AvaliacaoForm({
       setAvisoExistente(null);
       setNotasColetivas({});
       setJustColetivas({});
-      setColetivasCarregadas(false);
       return;
     }
 
@@ -213,7 +261,6 @@ export function AvaliacaoForm({
         if (!coletiva) {
           setNotasColetivas({});
           setJustColetivas({});
-          setColetivasCarregadas(false);
           return;
         }
         setNotasColetivas(
@@ -229,14 +276,19 @@ export function AvaliacaoForm({
             ]),
           ),
         );
-        setColetivasCarregadas(true);
       },
     );
 
     verificarAvaliacaoExistente(colaboradorId, mes, ano).then((existente) => {
       if (!ativo) return;
       if (!existente) {
-        if (!modoEdicao) setAvisoExistente(null);
+        if (!modoEdicao) {
+          setAvisoExistente(null);
+          setNotas((atual) => {
+            const base = notasPadrao(criteriosIndividuais);
+            return { ...base, ...atual };
+          });
+        }
         return;
       }
 
@@ -247,15 +299,16 @@ export function AvaliacaoForm({
           : `Já existe avaliação nesta competência (nota ${existente.notaFinal.toFixed(2)}). Salvar atualizará o registro.`,
       );
 
-      if (modoEdicao || !Object.keys(notas).length) {
-        setNotas(
-          Object.fromEntries(
+      if (modoEdicao || Object.keys(notas).length === 0) {
+        setNotas({
+          ...notasPadrao(criteriosIndividuais),
+          ...Object.fromEntries(
             existente.itens.map((item) => [
               item.criterioId,
               String(item.notaObtida),
             ]),
           ),
-        );
+        });
         setJustificativas(
           Object.fromEntries(
             existente.itens.map((item) => [
@@ -273,12 +326,14 @@ export function AvaliacaoForm({
       ativo = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [colaboradorId, mes, ano]);
+  }, [colaboradorId, mes, ano, coletivasRevision, departamentoId]);
 
   function executarSalvar(atualizarExistente: boolean) {
     const payload = criteriosIndividuais.map((criterio) => ({
       criterioId: criterio.id,
-      notaObtida: Number(String(notas[criterio.id] ?? "").replace(",", ".")),
+      notaObtida: Number(
+        String(notas[criterio.id] ?? NOTA_PADRAO).replace(",", "."),
+      ),
       justificativa: justificativas[criterio.id] ?? "",
     }));
 
@@ -331,56 +386,9 @@ export function AvaliacaoForm({
     setErro(null);
     setSucesso(null);
 
-    if (!colaboradorId) {
-      setErro("Selecione um colaborador.");
+    if (motivoBloqueio) {
+      setErro(motivoBloqueio);
       return;
-    }
-    if (criteriosIndividuais.length === 0) {
-      setErro("Não há critérios individuais para este departamento.");
-      return;
-    }
-    if (!pesosCompletos) {
-      setErro(
-        `A soma dos pesos aplicáveis é ${somaPesos.toFixed(1)}% (deve ser 100%).`,
-      );
-      return;
-    }
-    if (criteriosColetivos.length > 0 && !coletivasCompletas) {
-      setErro(
-        "As metas coletivas do departamento ainda não foram preenchidas para esta competência.",
-      );
-      return;
-    }
-
-    const payload = criteriosIndividuais.map((criterio) => ({
-      criterioId: criterio.id,
-      notaObtida: Number(String(notas[criterio.id] ?? "").replace(",", ".")),
-      justificativa: justificativas[criterio.id] ?? "",
-    }));
-
-    if (
-      payload.some(
-        (item) =>
-          !Number.isFinite(item.notaObtida) ||
-          item.notaObtida < 0 ||
-          item.notaObtida > 10,
-      )
-    ) {
-      setErro("Informe uma nota de 0.0 a 10.0 para todos os critérios individuais.");
-      return;
-    }
-
-    for (const criterio of criteriosIndividuais) {
-      const nota = Number(String(notas[criterio.id] ?? "").replace(",", "."));
-      if (
-        exigeJustificativa(nota, Boolean(criterio.toleranciaZero)) &&
-        !String(justificativas[criterio.id] ?? "").trim()
-      ) {
-        setErro(
-          `Justificativa obrigatória para "${criterio.nome}" (nota < 10.0).`,
-        );
-        return;
-      }
     }
 
     executarSalvar(Boolean(avisoExistente) || modoEdicao);
@@ -523,7 +531,7 @@ export function AvaliacaoForm({
             ) : (
               itensIndividuais.map(({ criterio, parcial }) => {
                 const notaNum = Number(
-                  String(notas[criterio.id] ?? "").replace(",", "."),
+                  String(notas[criterio.id] ?? NOTA_PADRAO).replace(",", "."),
                 );
                 const obrigatoria =
                   Number.isFinite(notaNum) &&
@@ -566,7 +574,7 @@ export function AvaliacaoForm({
                         Resultado / Atingimento
                       </p>
                       <SeletorNotaDegrau
-                        valor={notas[criterio.id] ?? ""}
+                        valor={notas[criterio.id] ?? NOTA_PADRAO}
                         onChange={(nota) =>
                           setNotas((atual) => ({
                             ...atual,
@@ -644,16 +652,6 @@ export function AvaliacaoForm({
                 />
               </label>
 
-              {!pesosCompletos ? (
-                <p className="mt-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
-                  Não é possível salvar: a soma dos pesos aplicáveis é{" "}
-                  <strong>{somaPesos.toFixed(1)}%</strong> e precisa ser{" "}
-                  <strong>100%</strong>. Ajuste os critérios em{" "}
-                  <strong>Critérios</strong> (hoje só há critérios globais
-                  cadastrados somando {somaPesos.toFixed(1)}%).
-                </p>
-              ) : null}
-
               {erro ? (
                 <p className="mt-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
                   {erro}
@@ -664,14 +662,15 @@ export function AvaliacaoForm({
                   {sucesso}
                 </p>
               ) : null}
+              {!erro && motivoBloqueio ? (
+                <p className="mt-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                  {motivoBloqueio}
+                </p>
+              ) : null}
 
               <button
                 type="submit"
-                disabled={
-                  pending ||
-                  criteriosIndividuais.length === 0 ||
-                  (criteriosColetivos.length > 0 && !coletivasCarregadas)
-                }
+                disabled={pending || Boolean(motivoBloqueio)}
                 className="mt-4 inline-flex w-full items-center justify-center rounded-md bg-brand-primary px-4 py-2.5 text-sm font-medium text-white transition hover:bg-red-800 disabled:opacity-60"
               >
                 {pending

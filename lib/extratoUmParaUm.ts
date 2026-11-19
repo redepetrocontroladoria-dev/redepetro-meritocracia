@@ -13,6 +13,13 @@ export type ExtratoItem = {
   origem?: string;
 };
 
+export type ExtratoResumoMensal = {
+  competencia: string;
+  notaConsolidada: number | null;
+  percentualAtingido: number | null;
+  valorMes: number;
+};
+
 export type ExtratoUmParaUmInput = {
   colaborador: string;
   cargo: string;
@@ -23,6 +30,7 @@ export type ExtratoUmParaUmInput = {
   percentualAtingido?: number | null;
   valorFinalBonus?: number | null;
   itens: ExtratoItem[];
+  resumoMensal?: ExtratoResumoMensal[];
 };
 
 export function gerarExtratoUmParaUmPdf(input: ExtratoUmParaUmInput) {
@@ -46,8 +54,33 @@ export function gerarExtratoUmParaUmPdf(input: ExtratoUmParaUmInput) {
   doc.text(`Competência: ${input.competencia}`, 14, 44);
   doc.text(`Gestor responsável: ${input.gestorResponsavel}`, 14, 49);
 
+  let cursorY = 56;
+
+  if (input.resumoMensal && input.resumoMensal.length > 0) {
+    autoTable(doc, {
+      startY: cursorY,
+      head: [["Mês/Ano", "Nota", "% Atingido", "Valor R$"]],
+      body: input.resumoMensal.map((mes) => [
+        mes.competencia,
+        mes.notaConsolidada != null ? mes.notaConsolidada.toFixed(2) : "—",
+        mes.percentualAtingido != null
+          ? `${mes.percentualAtingido.toFixed(1)}%`
+          : "—",
+        formatarMoeda(mes.valorMes),
+      ]),
+      styles: { fontSize: 7, cellPadding: 1.5 },
+      headStyles: {
+        fillColor: [brand.r, brand.g, brand.b],
+        textColor: [255, 255, 255],
+      },
+    });
+    cursorY =
+      ((doc as jsPDF & { lastAutoTable?: { finalY: number } }).lastAutoTable
+        ?.finalY ?? cursorY) + 8;
+  }
+
   autoTable(doc, {
-    startY: 56,
+    startY: cursorY,
     head: [
       [
         "Critério",
@@ -84,7 +117,7 @@ export function gerarExtratoUmParaUmPdf(input: ExtratoUmParaUmInput) {
   doc.roundedRect(14, finalY + 8, 182, 28, 2, 2, "F");
   doc.setTextColor(dark.r, dark.g, dark.b);
   doc.setFontSize(10);
-  doc.text("Resumo", 18, finalY + 16);
+  doc.text("Resumo do Ciclo", 18, finalY + 16);
   doc.setFontSize(9);
   doc.text(`Nota consolidada: ${input.notaFinal.toFixed(2)}`, 18, finalY + 23);
   doc.text(

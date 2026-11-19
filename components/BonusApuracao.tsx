@@ -10,11 +10,13 @@ import {
   salvarFaixaPagamento,
 } from "@/actions/bonus";
 import { baixarOuAbrirPdf } from "@/lib/baixarPdf";
+import type { BaseValorAlvo } from "@/lib/cicloBonus";
+import { formatarCompetencia } from "@/lib/competencia";
 import {
-  calcularBonusColaborador,
+  calcularBonusCiclo,
   formatarMoeda,
   type FaixaDegrau,
-  type ResultadoBonus,
+  type ResultadoBonusCiclo,
 } from "@/lib/calculoMeritocracia";
 import { gerarExtratoUmParaUmPdf } from "@/lib/extratoUmParaUm";
 
@@ -28,15 +30,21 @@ export type ItemBonusInput = {
   origem?: "INDIVIDUAL" | "DEPARTAMENTO";
 };
 
+export type MesBonusInput = {
+  mes: number;
+  ano: number;
+  temAvaliacao: boolean;
+  gestorNome?: string | null;
+  itens: ItemBonusInput[];
+};
+
 export type LinhaBonus = {
   colaboradorId: string;
   colaborador: string;
   cargo: string;
   departamento: string;
   valorAlvo: number;
-  temAvaliacao: boolean;
-  gestorNome?: string | null;
-  itens: ItemBonusInput[];
+  meses: MesBonusInput[];
 };
 
 export type FaixaEditavel = FaixaDegrau & { id: string };
@@ -53,6 +61,8 @@ type BonusApuracaoProps = {
   linhas: LinhaBonus[];
   faixas: FaixaEditavel[];
   competenciaLabel: string;
+  baseValor: BaseValorAlvo;
+  qtdMesesCiclo: number;
   isDiretoria?: boolean;
 };
 
@@ -77,15 +87,26 @@ function faixasParaDraft(faixas: FaixaEditavel[]): DraftFaixa[] {
   }));
 }
 
+function labelBaseValor(base: BaseValorAlvo) {
+  if (base === "unico_ciclo") return "Valor-Alvo Único do Ciclo";
+  if (base === "soma_mensal") return "Soma mês a mês";
+  return "Valor-Alvo Mensal × Meses";
+}
+
 export function BonusApuracao({
   linhas,
   faixas,
   competenciaLabel,
+  baseValor,
+  qtdMesesCiclo,
   isDiretoria = false,
 }: BonusApuracaoProps) {
   const router = useRouter();
+  const diasBasePadrao = Math.max(1, 30 * qtdMesesCiclo);
   const [dias, setDias] = useState<Record<string, number>>(
-    Object.fromEntries(linhas.map((item) => [item.colaboradorId, 30])),
+    Object.fromEntries(
+      linhas.map((item) => [item.colaboradorId, diasBasePadrao]),
+    ),
   );
   const [detalheId, setDetalheId] = useState<string | null>(null);
   const [editandoRegua, setEditandoRegua] = useState(false);
@@ -98,24 +119,43 @@ export function BonusApuracao({
   const [pending, startTransition] = useTransition();
 
   useEffect(() => {
+    setDias((atual) => {
+      const next: Record<string, number> = {};
+      for (const linha of linhas) {
+        next[linha.colaboradorId] = Math.min(
+          diasBasePadrao,
+          Math.max(1, atual[linha.colaboradorId] ?? diasBasePadrao),
+        );
+      }
+      return next;
+    });
+  }, [linhas, diasBasePadrao]);
+
+  useEffect(() => {
     if (!editandoRegua || savingKey) return;
     setDrafts(faixasParaDraft(faixas));
   }, [faixas, editandoRegua, savingKey]);
 
   const apurados = useMemo(() => {
     return linhas.map((linha) => {
-      const diasTrabalhados = dias[linha.colaboradorId] ?? 30;
-      const resultado: ResultadoBonus | null = linha.temAvaliacao
-        ? calcularBonusColaborador({
-            itens: linha.itens,
-            valorAlvo: linha.valorAlvo,
+      const diasTrabalhados = dias[linha.colaboradorId] ?? diasBasePadrao;
+      const temAlguma = linha.meses.some((m) => m.temAvaliacao);
+      const resultado: ResultadoBonusCiclo | null = temAlguma
+        ? calcularBonusCiclo({
+            meses: linha.meses,
+            valorAlvoMensal: linha.valorAlvo,
             faixas,
+            baseValor,
             diasTrabalhados,
           })
         : null;
-      return { ...linha, diasTrabalhados, resultado };
+      const gestorNome =
+        [...linha.meses]
+          .reverse()
+          .find((m) => m.gestorNome)?.gestorNome ?? null;
+      return { ...linha, diasTrabalhados, resultado, gestorNome };
     });
-  }, [linhas, dias, faixas]);
+  }, [linhas, dias, faixas, baseValor, diasBasePadrao]);
 
   function abrirEdicao() {
     setDrafts(faixasParaDraft(faixas));
@@ -244,19 +284,27 @@ export function BonusApuracao({
   function exportarExcel() {
     const workbook = XLSX.utils.book_new();
     const resumo = apurados.map((item) => ({
-      Competência: competenciaLabel,
+      Período: competenciaLabel,
+      "Base Valor-Alvo": labelBaseValor(baseValor),
       Colaborador: item.colaborador,
       Cargo: item.cargo,
       Departamento: item.departamento,
-      "Valor-Alvo (R$)": item.valorAlvo,
-      "% Atingido": item.resultado
-        ? Number(item.resultado.percentualAtingido.toFixed(2))
+      "Meses Avaliados": item.resultado
+        ? `${item.resultado.mesesAvaliados}/${item.resultado.mesesNoCiclo}`
+        : "0/0",
+      "Valor-Alvo do Ciclo (R$)": item.resultado
+        ? Number(item.resultado.valorAlvoCiclo.toFixed(2))
+        : Number(item.valorAlvo.toFixed(2)),
+      "% Médio Atingido": item.resultado
+        ? Number(item.resultado.percentualMedio.toFixed(2))
         : null,
-      Dias: item.diasTrabalhados,
+      "Dias / Proporção": item.resultado
+        ? `${item.diasTrabalhados}/${item.resultado.diasBase}`
+        : String(item.diasTrabalhados),
       "Valor Final (R$)": item.resultado
         ? Number(item.resultado.valorFinal.toFixed(2))
         : null,
-      Status: item.temAvaliacao ? "Avaliado" : "Sem avaliação",
+      Status: item.resultado ? "Com apuração" : "Sem avaliação no ciclo",
     }));
     XLSX.utils.book_append_sheet(
       workbook,
@@ -264,17 +312,45 @@ export function BonusApuracao({
       "Apuração",
     );
 
+    const mensal = apurados.flatMap((item) =>
+      (item.resultado?.resumoMensal ?? []).map((mes) => ({
+        Período: competenciaLabel,
+        Colaborador: item.colaborador,
+        Departamento: item.departamento,
+        Competência: formatarCompetencia(mes.mes, mes.ano),
+        "Nota Consolidada":
+          mes.notaConsolidada != null
+            ? Number(mes.notaConsolidada.toFixed(2))
+            : null,
+        "% Atingido":
+          mes.percentualAtingido != null
+            ? Number(mes.percentualAtingido.toFixed(2))
+            : null,
+        "Valor R$ do mês": Number(mes.valorMes.toFixed(2)),
+        Avaliado: mes.temAvaliacao ? "Sim" : "Não",
+      })),
+    );
+    XLSX.utils.book_append_sheet(
+      workbook,
+      XLSX.utils.json_to_sheet(
+        mensal.length > 0
+          ? mensal
+          : [{ Período: competenciaLabel, Colaborador: "", Competência: "" }],
+      ),
+      "Resumo Mensal",
+    );
+
     const memoria = apurados.flatMap((item) =>
-      (item.resultado?.memoria ?? []).map((criterio) => ({
-        Competência: competenciaLabel,
+      (item.resultado?.memoriaConsolidada ?? []).map((criterio) => ({
+        Período: competenciaLabel,
         Colaborador: item.colaborador,
         Departamento: item.departamento,
         Critério: criterio.criterioNome,
         "Peso (%)": criterio.peso,
-        Nota: criterio.nota,
-        "Atingimento (%)": Number(criterio.atingimento.toFixed(2)),
-        "Parte Paga (%)": Number(criterio.partePaga.toFixed(2)),
-        "Contribuição (%)": Number(criterio.contribuicao.toFixed(2)),
+        "Nota Média": Number(criterio.nota.toFixed(2)),
+        "Atingimento Médio (%)": Number(criterio.atingimento.toFixed(2)),
+        "Parte Paga Média (%)": Number(criterio.partePaga.toFixed(2)),
+        "Contribuição Média (%)": Number(criterio.contribuicao.toFixed(2)),
         Faixa: criterio.faixaDescricao,
       })),
     );
@@ -283,12 +359,15 @@ export function BonusApuracao({
       XLSX.utils.json_to_sheet(
         memoria.length > 0
           ? memoria
-          : [{ Competência: competenciaLabel, Colaborador: "", Critério: "" }],
+          : [{ Período: competenciaLabel, Colaborador: "", Critério: "" }],
       ),
       "Memória de Cálculo",
     );
 
-    XLSX.writeFile(workbook, "apuracao-bonus.xlsx");
+    XLSX.writeFile(
+      workbook,
+      `apuracao-bonus-${competenciaLabel.replace(/[\\/:*?"<>|]/g, "-")}.xlsx`,
+    );
   }
 
   function exportarPdf() {
@@ -299,27 +378,34 @@ export function BonusApuracao({
     doc.setFontSize(10);
     doc.setTextColor(26, 26, 26);
     doc.text(`Competência: ${competenciaLabel}`, 14, 22);
+    doc.text(`Base: ${labelBaseValor(baseValor)}`, 14, 27);
 
     autoTable(doc, {
-      startY: 28,
+      startY: 32,
       head: [
         [
           "Colaborador",
-          "Depto",
-          "Valor-Alvo",
-          "% Atingido",
+          "Meses",
+          "Valor-Alvo Ciclo",
+          "% Médio",
           "Dias",
           "Valor Final",
         ],
       ],
       body: apurados.map((item) => [
         item.colaborador,
-        item.departamento,
-        formatarMoeda(item.valorAlvo),
         item.resultado
-          ? `${item.resultado.percentualAtingido.toFixed(1)}%`
+          ? `${item.resultado.mesesAvaliados}/${item.resultado.mesesNoCiclo}`
           : "—",
-        String(item.diasTrabalhados),
+        item.resultado
+          ? formatarMoeda(item.resultado.valorAlvoCiclo)
+          : formatarMoeda(item.valorAlvo),
+        item.resultado
+          ? `${item.resultado.percentualMedio.toFixed(1)}%`
+          : "—",
+        item.resultado
+          ? `${item.diasTrabalhados}/${item.resultado.diasBase}`
+          : String(item.diasTrabalhados),
         item.resultado ? formatarMoeda(item.resultado.valorFinal) : "—",
       ]),
       styles: { fontSize: 8, cellPadding: 2 },
@@ -331,27 +417,27 @@ export function BonusApuracao({
         ?.finalY ?? 40;
 
     for (const item of apurados.filter((l) => l.resultado)) {
-      if (finalY > 240) {
+      if (finalY > 230) {
         doc.addPage();
         finalY = 16;
       }
       doc.setFontSize(10);
       doc.setTextColor(176, 31, 36);
       doc.text(
-        `${item.colaborador} — ${item.resultado!.percentualAtingido.toFixed(1)}% → ${formatarMoeda(item.resultado!.valorFinal)}`,
+        `${item.colaborador} — ${item.resultado!.percentualMedio.toFixed(1)}% → ${formatarMoeda(item.resultado!.valorFinal)}`,
         14,
         finalY + 10,
       );
       autoTable(doc, {
         startY: finalY + 14,
-        head: [["Critério", "Peso", "Nota", "Ating.%", "Parte%", "Contrib.%"]],
-        body: item.resultado!.memoria.map((c) => [
-          c.criterioNome,
-          `${c.peso.toFixed(1)}%`,
-          c.nota.toFixed(1),
-          `${c.atingimento.toFixed(1)}%`,
-          `${c.partePaga.toFixed(1)}%`,
-          `${c.contribuicao.toFixed(2)}%`,
+        head: [["Competência", "Nota", "% Atingido", "Valor R$"]],
+        body: item.resultado!.resumoMensal.map((m) => [
+          formatarCompetencia(m.mes, m.ano),
+          m.notaConsolidada != null ? m.notaConsolidada.toFixed(2) : "—",
+          m.percentualAtingido != null
+            ? `${m.percentualAtingido.toFixed(1)}%`
+            : "—",
+          formatarMoeda(m.valorMes),
         ]),
         styles: { fontSize: 7, cellPadding: 1.5 },
         headStyles: { fillColor: [176, 31, 36], textColor: [255, 255, 255] },
@@ -363,7 +449,7 @@ export function BonusApuracao({
 
     baixarOuAbrirPdf(
       doc,
-      `apuracao-bonus-redepetro-${competenciaLabel.replace(/\//g, "-")}.pdf`,
+      `apuracao-bonus-redepetro-${competenciaLabel.replace(/[\\/:*?"<>|]/g, "-")}.pdf`,
     );
   }
 
@@ -403,84 +489,88 @@ export function BonusApuracao({
               const key = chaveFaixa(draft, index);
               const salvando = savingKey === key;
               return (
-              <div
-                key={key}
-                className="grid gap-3 rounded-md border border-zinc-200 bg-white p-3 sm:grid-cols-2 lg:grid-cols-5"
-              >
-                <label className="block space-y-1">
-                  <span className="text-xs font-medium text-zinc-600">
-                    % Mínimo
-                  </span>
-                  <input
-                    type="text"
-                    inputMode="decimal"
-                    value={draft.minPercentual}
-                    onChange={(e) =>
-                      atualizarDraft(index, "minPercentual", e.target.value)
-                    }
-                    className="w-full rounded-md border border-zinc-300 px-2 py-1.5 text-sm outline-none focus:ring-2 focus:ring-zinc-200"
-                  />
-                </label>
-                <label className="block space-y-1">
-                  <span className="text-xs font-medium text-zinc-600">
-                    % Máximo
-                  </span>
-                  <input
-                    type="text"
-                    inputMode="decimal"
-                    value={draft.maxPercentual}
-                    onChange={(e) =>
-                      atualizarDraft(index, "maxPercentual", e.target.value)
-                    }
-                    className="w-full rounded-md border border-zinc-300 px-2 py-1.5 text-sm outline-none focus:ring-2 focus:ring-zinc-200"
-                  />
-                </label>
-                <label className="block space-y-1">
-                  <span className="text-xs font-medium text-zinc-600">
-                    Parte Paga (%)
-                  </span>
-                  <input
-                    type="text"
-                    inputMode="decimal"
-                    value={draft.multiplicadorPct}
-                    onChange={(e) =>
-                      atualizarDraft(index, "multiplicadorPct", e.target.value)
-                    }
-                    className="w-full rounded-md border border-zinc-300 px-2 py-1.5 text-sm outline-none focus:ring-2 focus:ring-zinc-200"
-                  />
-                </label>
-                <label className="block space-y-1 sm:col-span-2 lg:col-span-1">
-                  <span className="text-xs font-medium text-zinc-600">
-                    Descrição
-                  </span>
-                  <input
-                    type="text"
-                    value={draft.descricao}
-                    onChange={(e) =>
-                      atualizarDraft(index, "descricao", e.target.value)
-                    }
-                    className="w-full rounded-md border border-zinc-300 px-2 py-1.5 text-sm outline-none focus:ring-2 focus:ring-zinc-200"
-                  />
-                </label>
-                <div className="flex items-end gap-2 sm:col-span-2 lg:col-span-5">
-                  <button
-                    type="button"
-                    disabled={pending || salvando}
-                    onClick={() => salvarFaixa(index)}
-                    className="rounded-md bg-brand-primary px-3 py-1.5 text-xs font-medium text-white hover:bg-red-800 disabled:opacity-60"
-                  >
-                    {salvando ? "Salvando..." : "Salvar"}
-                  </button>
-                  <button
-                    type="button"
-                    disabled={pending || salvando}
-                    onClick={() => excluirFaixa(index)}
-                    className="rounded-md px-3 py-1.5 text-xs font-medium text-red-600 hover:bg-red-50 disabled:opacity-60"
-                  >
-                    Excluir
-                  </button>
+                <div
+                  key={key}
+                  className="grid gap-3 rounded-md border border-zinc-200 bg-white p-3 sm:grid-cols-2 lg:grid-cols-5"
+                >
+                  <label className="block space-y-1">
+                    <span className="text-xs font-medium text-zinc-600">
+                      % Mínimo
+                    </span>
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      value={draft.minPercentual}
+                      onChange={(e) =>
+                        atualizarDraft(index, "minPercentual", e.target.value)
+                      }
+                      className="w-full rounded-md border border-zinc-300 px-2 py-1.5 text-sm outline-none focus:ring-2 focus:ring-zinc-200"
+                    />
+                  </label>
+                  <label className="block space-y-1">
+                    <span className="text-xs font-medium text-zinc-600">
+                      % Máximo
+                    </span>
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      value={draft.maxPercentual}
+                      onChange={(e) =>
+                        atualizarDraft(index, "maxPercentual", e.target.value)
+                      }
+                      className="w-full rounded-md border border-zinc-300 px-2 py-1.5 text-sm outline-none focus:ring-2 focus:ring-zinc-200"
+                    />
+                  </label>
+                  <label className="block space-y-1">
+                    <span className="text-xs font-medium text-zinc-600">
+                      Parte Paga (%)
+                    </span>
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      value={draft.multiplicadorPct}
+                      onChange={(e) =>
+                        atualizarDraft(
+                          index,
+                          "multiplicadorPct",
+                          e.target.value,
+                        )
+                      }
+                      className="w-full rounded-md border border-zinc-300 px-2 py-1.5 text-sm outline-none focus:ring-2 focus:ring-zinc-200"
+                    />
+                  </label>
+                  <label className="block space-y-1 sm:col-span-2 lg:col-span-1">
+                    <span className="text-xs font-medium text-zinc-600">
+                      Descrição
+                    </span>
+                    <input
+                      type="text"
+                      value={draft.descricao}
+                      onChange={(e) =>
+                        atualizarDraft(index, "descricao", e.target.value)
+                      }
+                      className="w-full rounded-md border border-zinc-300 px-2 py-1.5 text-sm outline-none focus:ring-2 focus:ring-zinc-200"
+                    />
+                  </label>
+                  <div className="flex items-end gap-2 sm:col-span-2 lg:col-span-5">
+                    <button
+                      type="button"
+                      disabled={pending || salvando}
+                      onClick={() => salvarFaixa(index)}
+                      className="rounded-md bg-brand-primary px-3 py-1.5 text-xs font-medium text-white hover:bg-red-800 disabled:opacity-60"
+                    >
+                      {salvando ? "Salvando..." : "Salvar"}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={pending || salvando}
+                      onClick={() => excluirFaixa(index)}
+                      className="rounded-md px-3 py-1.5 text-xs font-medium text-red-600 hover:bg-red-50 disabled:opacity-60"
+                    >
+                      Excluir
+                    </button>
+                  </div>
                 </div>
-              </div>
               );
             })}
             <button
@@ -515,9 +605,14 @@ export function BonusApuracao({
 
       <section className="rounded-lg border border-zinc-200 bg-white p-5 shadow-sm">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-brand-secondary">
-            Apuração por Colaborador
-          </h2>
+          <div>
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-brand-secondary">
+              Apuração por Colaborador
+            </h2>
+            <p className="mt-1 text-xs text-zinc-500">
+              {competenciaLabel} · {labelBaseValor(baseValor)}
+            </p>
+          </div>
           <div className="flex flex-wrap gap-2">
             <button
               type="button"
@@ -546,14 +641,16 @@ export function BonusApuracao({
               <thead>
                 <tr className="bg-brand-secondary text-xs uppercase tracking-wide text-white">
                   <th className="px-3 py-3 font-semibold">Colaborador</th>
-                  <th className="px-3 py-3 font-semibold">Departamento</th>
+                  <th className="px-3 py-3 font-semibold">Meses Avaliados</th>
                   <th className="px-3 py-3 font-semibold text-right">
-                    Valor-Alvo
+                    Valor-Alvo do Ciclo
                   </th>
                   <th className="px-3 py-3 font-semibold text-right">
-                    % Atingido
+                    % Médio
                   </th>
-                  <th className="px-3 py-3 font-semibold text-right">Dias</th>
+                  <th className="px-3 py-3 font-semibold text-right">
+                    Dias / Proporção
+                  </th>
                   <th className="px-3 py-3 font-semibold text-right">
                     Valor Final
                   </th>
@@ -567,34 +664,51 @@ export function BonusApuracao({
                       <p className="font-medium text-zinc-900">
                         {item.colaborador}
                       </p>
-                      <p className="text-xs text-zinc-500">{item.cargo}</p>
+                      <p className="text-xs text-zinc-500">
+                        {item.cargo} · {item.departamento}
+                      </p>
                     </td>
-                    <td className="px-3 py-3">{item.departamento}</td>
+                    <td className="px-3 py-3 tabular-nums">
+                      {item.resultado
+                        ? `${item.resultado.mesesAvaliados}/${item.resultado.mesesNoCiclo}`
+                        : `0/${qtdMesesCiclo}`}
+                    </td>
                     <td className="px-3 py-3 text-right tabular-nums">
-                      {formatarMoeda(item.valorAlvo)}
+                      {item.resultado
+                        ? formatarMoeda(item.resultado.valorAlvoCiclo)
+                        : formatarMoeda(
+                            baseValor === "unico_ciclo"
+                              ? item.valorAlvo
+                              : item.valorAlvo * qtdMesesCiclo,
+                          )}
                     </td>
                     <td className="px-3 py-3 text-right font-semibold tabular-nums">
                       {item.resultado
-                        ? `${item.resultado.percentualAtingido.toFixed(1)}%`
+                        ? `${item.resultado.percentualMedio.toFixed(1)}%`
                         : "—"}
                     </td>
                     <td className="px-3 py-3 text-right">
-                      <input
-                        type="number"
-                        min={1}
-                        max={30}
-                        value={item.diasTrabalhados}
-                        onChange={(e) =>
-                          setDias((atual) => ({
-                            ...atual,
-                            [item.colaboradorId]: Math.min(
-                              30,
-                              Math.max(1, Number(e.target.value) || 1),
-                            ),
-                          }))
-                        }
-                        className="w-16 rounded-md border border-zinc-300 px-2 py-1 text-right text-sm outline-none focus:ring-2 focus:ring-zinc-200"
-                      />
+                      <div className="inline-flex items-center gap-1">
+                        <input
+                          type="number"
+                          min={1}
+                          max={diasBasePadrao}
+                          value={item.diasTrabalhados}
+                          onChange={(e) =>
+                            setDias((atual) => ({
+                              ...atual,
+                              [item.colaboradorId]: Math.min(
+                                diasBasePadrao,
+                                Math.max(1, Number(e.target.value) || 1),
+                              ),
+                            }))
+                          }
+                          className="w-16 rounded-md border border-zinc-300 px-2 py-1 text-right text-sm outline-none focus:ring-2 focus:ring-zinc-200"
+                        />
+                        <span className="text-xs text-zinc-500">
+                          /{diasBasePadrao}
+                        </span>
+                      </div>
                     </td>
                     <td className="px-3 py-3 text-right font-semibold tabular-nums text-brand-primary">
                       {item.resultado
@@ -624,21 +738,11 @@ export function BonusApuracao({
                           disabled={!item.resultado}
                           onClick={() => {
                             if (!item.resultado) return;
-                            gerarExtratoUmParaUmPdf({
-                              colaborador: item.colaborador,
-                              cargo: item.cargo,
-                              departamento: item.departamento,
-                              competencia: competenciaLabel,
-                              gestorResponsavel: item.gestorNome ?? "—",
-                              notaFinal:
-                                item.resultado.percentualAtingido / 10,
-                              percentualAtingido:
-                                item.resultado.percentualAtingido,
-                              valorFinalBonus: item.resultado.valorFinal,
-                              itens: item.resultado.memoria.map((c) => {
-                                const origem = item.itens.find(
-                                  (i) => i.criterioId === c.criterioId,
-                                );
+                            const itensExtrato =
+                              item.resultado.memoriaConsolidada.map((c) => {
+                                const origem = item.meses
+                                  .flatMap((m) => m.itens)
+                                  .find((i) => i.criterioId === c.criterioId);
                                 return {
                                   criterioNome: c.criterioNome,
                                   peso: c.peso,
@@ -648,7 +752,29 @@ export function BonusApuracao({
                                   justificativa: origem?.justificativa,
                                   origem: origem?.origem,
                                 };
-                              }),
+                              });
+                            gerarExtratoUmParaUmPdf({
+                              colaborador: item.colaborador,
+                              cargo: item.cargo,
+                              departamento: item.departamento,
+                              competencia: competenciaLabel,
+                              gestorResponsavel: item.gestorNome ?? "—",
+                              notaFinal: item.resultado.percentualMedio / 10,
+                              percentualAtingido:
+                                item.resultado.percentualMedio,
+                              valorFinalBonus: item.resultado.valorFinal,
+                              itens: itensExtrato,
+                              resumoMensal: item.resultado.resumoMensal.map(
+                                (m) => ({
+                                  competencia: formatarCompetencia(
+                                    m.mes,
+                                    m.ano,
+                                  ),
+                                  notaConsolidada: m.notaConsolidada,
+                                  percentualAtingido: m.percentualAtingido,
+                                  valorMes: m.valorMes,
+                                }),
+                              ),
                             });
                           }}
                           className="rounded-md px-2 py-1 text-xs font-medium text-brand-secondary hover:bg-zinc-100 disabled:opacity-40"
@@ -671,25 +797,88 @@ export function BonusApuracao({
             Memória de Cálculo — {detalhe.colaborador}
           </h3>
           <p className="mb-1 text-sm text-zinc-500">
+            Período:{" "}
+            <span className="font-semibold text-brand-secondary">
+              {competenciaLabel}
+            </span>
+            {" · "}
             Avaliado por:{" "}
             <span className="font-semibold text-brand-secondary">
               {detalhe.gestorNome ?? "—"}
             </span>
           </p>
           <p className="mb-4 text-sm text-zinc-500">
-            {detalhe.resultado.percentualAtingido.toFixed(1)}% do valor-alvo ×{" "}
-            {detalhe.diasTrabalhados}/30 ={" "}
+            {detalhe.resultado.mesesAvaliados}/
+            {detalhe.resultado.mesesNoCiclo} meses ·{" "}
+            {detalhe.resultado.percentualMedio.toFixed(1)}% médio do valor-alvo
+            do ciclo ({formatarMoeda(detalhe.resultado.valorAlvoCiclo)}) ×{" "}
+            {detalhe.diasTrabalhados}/{detalhe.resultado.diasBase} ={" "}
             <span className="font-semibold text-brand-primary">
               {formatarMoeda(detalhe.resultado.valorFinal)}
             </span>
           </p>
+
+          <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-brand-secondary">
+            Resumo mês a mês
+          </h4>
+          <div className="mb-5 overflow-x-auto rounded-md border border-zinc-200">
+            <table className="min-w-full text-left text-sm">
+              <thead>
+                <tr className="bg-brand-secondary text-xs uppercase tracking-wide text-white">
+                  <th className="px-3 py-3 font-semibold">Mês/Ano</th>
+                  <th className="px-3 py-3 font-semibold text-right">
+                    Nota Consolidada
+                  </th>
+                  <th className="px-3 py-3 font-semibold text-right">
+                    % Atingido
+                  </th>
+                  <th className="px-3 py-3 font-semibold text-right">
+                    Valor R$ do mês
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-zinc-100">
+                {detalhe.resultado.resumoMensal.map((mes) => (
+                  <tr key={`${mes.ano}-${mes.mes}`}>
+                    <td className="px-3 py-3 font-medium">
+                      {formatarCompetencia(mes.mes, mes.ano)}
+                      {!mes.temAvaliacao ? (
+                        <span className="ml-2 text-xs text-zinc-400">
+                          (sem avaliação)
+                        </span>
+                      ) : null}
+                    </td>
+                    <td className="px-3 py-3 text-right tabular-nums">
+                      {mes.notaConsolidada != null
+                        ? mes.notaConsolidada.toFixed(2)
+                        : "—"}
+                    </td>
+                    <td className="px-3 py-3 text-right tabular-nums">
+                      {mes.percentualAtingido != null
+                        ? `${mes.percentualAtingido.toFixed(1)}%`
+                        : "—"}
+                    </td>
+                    <td className="px-3 py-3 text-right font-semibold tabular-nums text-brand-primary">
+                      {formatarMoeda(mes.valorMes)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-brand-secondary">
+            Critérios (média do ciclo)
+          </h4>
           <div className="overflow-x-auto rounded-md border border-zinc-200">
             <table className="min-w-full text-left text-sm">
               <thead>
                 <tr className="bg-brand-secondary text-xs uppercase tracking-wide text-white">
                   <th className="px-3 py-3 font-semibold">Critério</th>
                   <th className="px-3 py-3 font-semibold text-right">Peso</th>
-                  <th className="px-3 py-3 font-semibold text-right">Nota</th>
+                  <th className="px-3 py-3 font-semibold text-right">
+                    Nota Média
+                  </th>
                   <th className="px-3 py-3 font-semibold text-right">
                     Atingimento
                   </th>
@@ -700,43 +889,34 @@ export function BonusApuracao({
                     Contribuição
                   </th>
                   <th className="px-3 py-3 font-semibold">Faixa</th>
-                  <th className="px-3 py-3 font-semibold">Justificativa</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-100">
-                {detalhe.resultado.memoria.map((item) => {
-                  const origem = detalhe.itens.find(
-                    (i) => i.criterioId === item.criterioId,
-                  );
-                  return (
-                    <tr key={item.criterioId}>
-                      <td className="px-3 py-3 font-medium">
-                        {item.criterioNome}
-                      </td>
-                      <td className="px-3 py-3 text-right tabular-nums">
-                        {item.peso.toFixed(1)}%
-                      </td>
-                      <td className="px-3 py-3 text-right tabular-nums">
-                        {item.nota.toFixed(1)}
-                      </td>
-                      <td className="px-3 py-3 text-right tabular-nums">
-                        {item.atingimento.toFixed(1)}%
-                      </td>
-                      <td className="px-3 py-3 text-right tabular-nums">
-                        {item.partePaga.toFixed(1)}%
-                      </td>
-                      <td className="px-3 py-3 text-right font-semibold tabular-nums">
-                        {item.contribuicao.toFixed(2)}%
-                      </td>
-                      <td className="px-3 py-3 text-xs text-zinc-600">
-                        {item.faixaDescricao}
-                      </td>
-                      <td className="px-3 py-3 text-xs text-zinc-600">
-                        {origem?.justificativa?.trim() || "—"}
-                      </td>
-                    </tr>
-                  );
-                })}
+                {detalhe.resultado.memoriaConsolidada.map((item) => (
+                  <tr key={item.criterioId}>
+                    <td className="px-3 py-3 font-medium">
+                      {item.criterioNome}
+                    </td>
+                    <td className="px-3 py-3 text-right tabular-nums">
+                      {item.peso.toFixed(1)}%
+                    </td>
+                    <td className="px-3 py-3 text-right tabular-nums">
+                      {item.nota.toFixed(1)}
+                    </td>
+                    <td className="px-3 py-3 text-right tabular-nums">
+                      {item.atingimento.toFixed(1)}%
+                    </td>
+                    <td className="px-3 py-3 text-right tabular-nums">
+                      {item.partePaga.toFixed(1)}%
+                    </td>
+                    <td className="px-3 py-3 text-right font-semibold tabular-nums">
+                      {item.contribuicao.toFixed(2)}%
+                    </td>
+                    <td className="px-3 py-3 text-xs text-zinc-600">
+                      {item.faixaDescricao}
+                    </td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>

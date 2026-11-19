@@ -43,36 +43,88 @@ export const FAIXAS_PADRAO: FaixaDegrau[] = [
     descricao: "100% do peso",
   },
   {
-    minPercentual: 95,
-    maxPercentual: 99.99,
-    multiplicadorPeso: 0.85,
-    descricao: "85% do peso",
-  },
-  {
     minPercentual: 90,
-    maxPercentual: 94.99,
-    multiplicadorPeso: 0.7,
-    descricao: "70% do peso",
+    maxPercentual: 99.99,
+    multiplicadorPeso: 0.9,
+    descricao: "90% do peso",
   },
   {
-    minPercentual: 85,
+    minPercentual: 80,
     maxPercentual: 89.99,
+    multiplicadorPeso: 0.8,
+    descricao: "80% do peso",
+  },
+  {
+    minPercentual: 70,
+    maxPercentual: 79.99,
+    multiplicadorPeso: 0.65,
+    descricao: "65% do peso",
+  },
+  {
+    minPercentual: 60,
+    maxPercentual: 69.99,
     multiplicadorPeso: 0.5,
     descricao: "50% do peso",
   },
   {
-    minPercentual: 80,
-    maxPercentual: 84.99,
-    multiplicadorPeso: 0.3,
-    descricao: "30% do peso",
-  },
-  {
     minPercentual: 0,
-    maxPercentual: 79.99,
+    maxPercentual: 59.99,
     multiplicadorPeso: 0,
     descricao: "0% do peso",
   },
 ];
+
+export function legendaReguaDegraus(faixas: FaixaDegrau[] = FAIXAS_PADRAO) {
+  const ordenadas = [...faixas].sort(
+    (a, b) => b.minPercentual - a.minPercentual,
+  );
+  return ordenadas.map((faixa, index) => {
+    const parte = `${Number((faixa.multiplicadorPeso * 100).toFixed(0))}% do peso`;
+    if (faixa.minPercentual >= 100) {
+      return { atingimento: "100%", parte };
+    }
+    if (faixa.multiplicadorPeso <= 0 || faixa.minPercentual <= 0) {
+      const limiar =
+        ordenadas[index - 1]?.minPercentual ??
+        faixa.maxPercentual + 0.01;
+      return { atingimento: `< ${Number(limiar.toFixed(0))}%`, parte };
+    }
+    return {
+      atingimento: `${Number(faixa.minPercentual.toFixed(0))}%`,
+      parte,
+    };
+  });
+}
+
+export function degrausRapidosDeFaixas(faixas: FaixaDegrau[] = FAIXAS_PADRAO) {
+  const ordenadas = [...faixas].sort(
+    (a, b) => b.minPercentual - a.minPercentual,
+  );
+  return ordenadas.map((faixa, index) => {
+    const partePct = Number((faixa.multiplicadorPeso * 100).toFixed(0));
+    const nota =
+      faixa.minPercentual <= 0
+        ? 0
+        : Number((faixa.minPercentual / 10).toFixed(1));
+    const limiarInferior =
+      ordenadas[index - 1]?.minPercentual ?? faixa.maxPercentual + 0.01;
+    const label =
+      faixa.minPercentual >= 100
+        ? "100% Meta"
+        : faixa.multiplicadorPeso <= 0 || faixa.minPercentual <= 0
+          ? `< ${Number(limiarInferior.toFixed(0))}%`
+          : `${Number(faixa.minPercentual.toFixed(0))}%`;
+    const detalhe = `${nota.toFixed(1)} — ${partePct}% peso`;
+    return {
+      label,
+      detalhe,
+      nota,
+      minPercentual: faixa.minPercentual,
+      maxPercentual: faixa.maxPercentual,
+      multiplicadorPeso: faixa.multiplicadorPeso,
+    };
+  });
+}
 
 export function notaParaAtingimento(nota: number) {
   return Math.max(0, Math.min(100, nota * 10));

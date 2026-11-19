@@ -3,7 +3,8 @@
 import { useMemo, useState } from "react";
 import { AvaliacaoDepartamentoForm } from "@/components/AvaliacaoDepartamentoForm";
 import { AvaliacaoForm } from "@/components/AvaliacaoForm";
-import { LEGENDA_REGUA_DEGRAUS } from "@/components/SeletorNotaDegrau";
+import { legendaReguaDegraus } from "@/lib/calculoMeritocracia";
+import type { FaixaDegrau } from "@/lib/calculoMeritocracia";
 
 type DepartamentoOption = { id: string; nome: string };
 
@@ -42,11 +43,13 @@ export function AvaliarWorkspace({
   departamentos,
   colaboradores,
   criterios,
+  faixas,
   edicaoInicial = null,
 }: {
   departamentos: DepartamentoOption[];
   colaboradores: ColaboradorOption[];
   criterios: CriterioOption[];
+  faixas: FaixaDegrau[];
   edicaoInicial?: EdicaoInicial | null;
 }) {
   const departamentoInicial = useMemo(() => {
@@ -66,6 +69,8 @@ export function AvaliarWorkspace({
   const [ano, setAno] = useState(edicaoInicial?.ano ?? agora.getFullYear());
   const [coletivasRevision, setColetivasRevision] = useState(0);
 
+  const legenda = useMemo(() => legendaReguaDegraus(faixas), [faixas]);
+
   return (
     <div className="space-y-8">
       <div className="rounded-lg border border-zinc-200 bg-white p-5 shadow-sm">
@@ -76,9 +81,9 @@ export function AvaliarWorkspace({
           Atingimento da meta → parte do peso paga no bônus.
         </p>
         <div className="flex flex-wrap gap-1.5">
-          {LEGENDA_REGUA_DEGRAUS.map((item) => (
+          {legenda.map((item) => (
             <span
-              key={item.atingimento}
+              key={`${item.atingimento}-${item.parte}`}
               className="inline-flex items-center gap-1.5 rounded-full border border-zinc-200 bg-zinc-50 px-2.5 py-1 text-[11px]"
             >
               <span className="font-semibold text-brand-primary">
@@ -96,6 +101,7 @@ export function AvaliarWorkspace({
       <AvaliacaoDepartamentoForm
         departamentos={departamentos}
         criterios={criterios}
+        faixas={faixas}
         departamentoId={departamentoId}
         mes={mes}
         ano={ano}
@@ -108,6 +114,7 @@ export function AvaliarWorkspace({
       <AvaliacaoForm
         colaboradores={colaboradores}
         criterios={criterios}
+        faixas={faixas}
         departamentoId={departamentoId}
         mes={mes}
         ano={ano}

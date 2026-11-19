@@ -9,6 +9,7 @@ import {
 } from "@/actions/avaliacoes";
 import { SeletorNotaDegrau } from "@/components/SeletorNotaDegrau";
 import { exigeJustificativa } from "@/lib/avaliacaoConsolidada";
+import type { FaixaDegrau } from "@/lib/calculoMeritocracia";
 import { MESES } from "@/lib/competencia";
 
 type DepartamentoOption = { id: string; nome: string };
@@ -35,6 +36,7 @@ function notasPadrao(criterios: CriterioOption[]) {
 export function AvaliacaoDepartamentoForm({
   departamentos,
   criterios,
+  faixas,
   departamentoId,
   mes,
   ano,
@@ -45,6 +47,7 @@ export function AvaliacaoDepartamentoForm({
 }: {
   departamentos: DepartamentoOption[];
   criterios: CriterioOption[];
+  faixas: FaixaDegrau[];
   departamentoId: string;
   mes: number;
   ano: number;
@@ -328,6 +331,7 @@ export function AvaliacaoDepartamentoForm({
                     }))
                   }
                   toleranciaZero={Boolean(criterio.toleranciaZero)}
+                  faixas={faixas}
                 />
                 <label className="mt-3 block space-y-1.5">
                   <span className="text-sm font-medium text-zinc-700">

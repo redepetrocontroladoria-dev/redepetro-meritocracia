@@ -8,6 +8,7 @@ import * as XLSX from "xlsx";
 import {
   excluirFaixaPagamento,
   salvarFaixaPagamento,
+  salvarTodasFaixasPagamento,
 } from "@/actions/bonus";
 import { baixarOuAbrirPdf } from "@/lib/baixarPdf";
 import type { BaseValorAlvo } from "@/lib/cicloBonus";
@@ -132,9 +133,9 @@ export function BonusApuracao({
   }, [linhas, diasBasePadrao]);
 
   useEffect(() => {
-    if (!editandoRegua || savingKey) return;
+    if (savingKey) return;
     setDrafts(faixasParaDraft(faixas));
-  }, [faixas, editandoRegua, savingKey]);
+  }, [faixas, savingKey]);
 
   const apurados = useMemo(() => {
     return linhas.map((linha) => {
@@ -219,9 +220,9 @@ export function BonusApuracao({
       try {
         const result = await salvarFaixaPagamento({
           id: draft.id ? String(draft.id) : undefined,
-          minPercentual,
-          maxPercentual,
-          multiplicadorPeso: partePagaPct / 100,
+          minPercentual: draft.minPercentual,
+          maxPercentual: draft.maxPercentual,
+          multiplicadorPeso: draft.multiplicadorPct,
           descricao: draft.descricao,
         });
 
@@ -240,6 +241,61 @@ export function BonusApuracao({
       } catch (error) {
         setErroRegua(
           error instanceof Error ? error.message : "Erro ao salvar faixa.",
+        );
+        setSucessoRegua(null);
+      } finally {
+        setSavingKey(null);
+      }
+    });
+  }
+
+  function salvarTodasFaixas() {
+    for (const draft of drafts) {
+      const minPercentual = parseDecimalLocal(draft.minPercentual);
+      const maxPercentual = parseDecimalLocal(draft.maxPercentual);
+      const partePagaPct = parseDecimalLocal(draft.multiplicadorPct);
+      if (
+        !Number.isFinite(minPercentual) ||
+        !Number.isFinite(maxPercentual) ||
+        !Number.isFinite(partePagaPct)
+      ) {
+        setErroRegua(
+          "Informe números válidos em todas as faixas (use vírgula ou ponto).",
+        );
+        setSucessoRegua(null);
+        return;
+      }
+    }
+
+    setErroRegua(null);
+    setSucessoRegua(null);
+    setSavingKey("todas");
+
+    startTransition(async () => {
+      try {
+        const result = await salvarTodasFaixasPagamento(
+          drafts.map((draft) => ({
+            id: draft.id ? String(draft.id) : undefined,
+            minPercentual: draft.minPercentual,
+            maxPercentual: draft.maxPercentual,
+            multiplicadorPeso: draft.multiplicadorPct,
+            descricao: draft.descricao,
+          })),
+        );
+
+        if (!result.ok) {
+          setErroRegua(result.error);
+          setSucessoRegua(null);
+          return;
+        }
+
+        setSucessoRegua("Todas as faixas foram salvas com sucesso!");
+        router.refresh();
+      } catch (error) {
+        setErroRegua(
+          error instanceof Error
+            ? error.message
+            : "Erro ao salvar todas as faixas.",
         );
         setSucessoRegua(null);
       } finally {
@@ -573,14 +629,26 @@ export function BonusApuracao({
                 </div>
               );
             })}
-            <button
-              type="button"
-              onClick={adicionarFaixa}
-              disabled={pending}
-              className="rounded-md border border-dashed border-zinc-300 px-3 py-2 text-sm font-medium text-brand-secondary hover:bg-white disabled:opacity-60"
-            >
-              + Nova Faixa
-            </button>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={adicionarFaixa}
+                disabled={pending}
+                className="rounded-md border border-dashed border-zinc-300 px-3 py-2 text-sm font-medium text-brand-secondary hover:bg-white disabled:opacity-60"
+              >
+                + Nova Faixa
+              </button>
+              <button
+                type="button"
+                onClick={salvarTodasFaixas}
+                disabled={pending || savingKey === "todas"}
+                className="rounded-md bg-brand-primary px-3 py-2 text-sm font-medium text-white hover:bg-red-800 disabled:opacity-60"
+              >
+                {savingKey === "todas"
+                  ? "Salvando todas..."
+                  : "Salvar Todas as Alterações"}
+              </button>
+            </div>
           </div>
         ) : (
           <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">

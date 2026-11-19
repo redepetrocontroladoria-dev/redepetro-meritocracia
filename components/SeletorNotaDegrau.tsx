@@ -1,58 +1,18 @@
 "use client";
 
 import {
+  degrausRapidosDeFaixas,
   encontrarFaixa,
   FAIXAS_PADRAO,
+  legendaReguaDegraus,
   notaParaAtingimento,
+  type FaixaDegrau,
 } from "@/lib/calculoMeritocracia";
 
-const DEGRAUS = [
-  {
-    label: "100% Meta",
-    detalhe: "10.0 — 100% peso",
-    nota: 10,
-    minAtingimento: 100,
-  },
-  {
-    label: "95%",
-    detalhe: "9.5 — 85% peso",
-    nota: 9.5,
-    minAtingimento: 95,
-  },
-  {
-    label: "90%",
-    detalhe: "9.0 — 70% peso",
-    nota: 9,
-    minAtingimento: 90,
-  },
-  {
-    label: "85%",
-    detalhe: "8.5 — 50% peso",
-    nota: 8.5,
-    minAtingimento: 85,
-  },
-  {
-    label: "80%",
-    detalhe: "8.0 — 30% peso",
-    nota: 8,
-    minAtingimento: 80,
-  },
-  {
-    label: "Abaixo de 80%",
-    detalhe: "5.0 — 0% peso",
-    nota: 5,
-    minAtingimento: 0,
-  },
-] as const;
+export { legendaReguaDegraus as LEGENDA_REGUA_DEGRAUS_FROM_FAIXAS };
 
-export const LEGENDA_REGUA_DEGRAUS = [
-  { atingimento: "100%", parte: "100% do peso" },
-  { atingimento: "95%", parte: "85% do peso" },
-  { atingimento: "90%", parte: "70% do peso" },
-  { atingimento: "85%", parte: "50% do peso" },
-  { atingimento: "80%", parte: "30% do peso" },
-  { atingimento: "< 80%", parte: "0% do peso" },
-] as const;
+/** @deprecated Preferir legendaReguaDegraus(faixas) com dados do banco. */
+export const LEGENDA_REGUA_DEGRAUS = legendaReguaDegraus(FAIXAS_PADRAO);
 
 function parseNota(valor: string) {
   const n = Number(String(valor ?? "").replace(",", "."));
@@ -63,16 +23,17 @@ function notaProxima(a: number, b: number) {
   return Math.abs(a - b) < 0.05;
 }
 
-function degrauAtivoPorFaixa(atingimento: number | null, minAtingimento: number) {
+function degrauAtivo(
+  atingimento: number | null,
+  degrau: { minPercentual: number; maxPercentual: number },
+  faixas: FaixaDegrau[],
+) {
   if (atingimento == null) return false;
-  const faixa = encontrarFaixa(atingimento, FAIXAS_PADRAO);
-  if (minAtingimento >= 100) {
-    return faixa.minPercentual >= 100;
-  }
-  if (minAtingimento === 0) {
-    return faixa.multiplicadorPeso === 0 && faixa.minPercentual < 80;
-  }
-  return Math.abs(faixa.minPercentual - minAtingimento) < 0.01;
+  const faixa = encontrarFaixa(atingimento, faixas);
+  return (
+    Math.abs(faixa.minPercentual - degrau.minPercentual) < 0.01 &&
+    Math.abs(faixa.maxPercentual - degrau.maxPercentual) < 0.01
+  );
 }
 
 function BadgePartePaga({
@@ -110,16 +71,20 @@ export function SeletorNotaDegrau({
   onChange,
   toleranciaZero = false,
   readOnly = false,
+  faixas = FAIXAS_PADRAO,
 }: {
   valor: string;
   onChange: (nota: string) => void;
   toleranciaZero?: boolean;
   readOnly?: boolean;
+  faixas?: FaixaDegrau[];
 }) {
+  const faixasAtivas = faixas.length > 0 ? faixas : FAIXAS_PADRAO;
+  const degraus = degrausRapidosDeFaixas(faixasAtivas);
   const nota = parseNota(valor);
   const atingimento = nota == null ? null : notaParaAtingimento(nota);
   const faixa =
-    atingimento == null ? null : encontrarFaixa(atingimento, FAIXAS_PADRAO);
+    atingimento == null ? null : encontrarFaixa(atingimento, faixasAtivas);
   const partePaga =
     toleranciaZero && nota != null && nota < 10
       ? 0
@@ -205,18 +170,23 @@ export function SeletorNotaDegrau({
 
   return (
     <div className="space-y-3">
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
-        {DEGRAUS.map((degrau) => {
+      <div
+        className={`grid gap-2 ${
+          degraus.length <= 3
+            ? "grid-cols-2 sm:grid-cols-3"
+            : degraus.length <= 4
+              ? "grid-cols-2 sm:grid-cols-4"
+              : "grid-cols-2 sm:grid-cols-3 lg:grid-cols-6"
+        }`}
+      >
+        {degraus.map((degrau) => {
           const exato = nota != null && notaProxima(nota, degrau.nota);
-          const faixaAtiva = degrauAtivoPorFaixa(
-            atingimento,
-            degrau.minAtingimento,
-          );
+          const faixaAtiva = degrauAtivo(atingimento, degrau, faixasAtivas);
           const ativo = exato || faixaAtiva;
 
           return (
             <button
-              key={degrau.label}
+              key={`${degrau.minPercentual}-${degrau.maxPercentual}-${degrau.label}`}
               type="button"
               onClick={() => onChange(String(degrau.nota))}
               className={`min-h-[4.25rem] rounded-lg border-2 px-2.5 py-2.5 text-left transition ${

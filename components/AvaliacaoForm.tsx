@@ -8,11 +8,12 @@ import {
   verificarAvaliacaoExistente,
 } from "@/actions/avaliacoes";
 import { SeletorNotaDegrau } from "@/components/SeletorNotaDegrau";
-import { MESES } from "@/lib/competencia";
 import {
   calcularNotaFinalConsolidada,
   exigeJustificativa,
 } from "@/lib/avaliacaoConsolidada";
+import type { FaixaDegrau } from "@/lib/calculoMeritocracia";
+import { MESES } from "@/lib/competencia";
 import { classificarNota } from "@/lib/escala";
 
 type ColaboradorOption = {
@@ -47,6 +48,7 @@ type EdicaoInicial = {
 type AvaliacaoFormProps = {
   colaboradores: ColaboradorOption[];
   criterios: CriterioOption[];
+  faixas: FaixaDegrau[];
   departamentoId: string;
   mes: number;
   ano: number;
@@ -63,6 +65,7 @@ function notasPadrao(criterios: CriterioOption[]) {
 export function AvaliacaoForm({
   colaboradores,
   criterios,
+  faixas,
   departamentoId,
   mes,
   ano,
@@ -511,6 +514,7 @@ export function AvaliacaoForm({
                     onChange={() => undefined}
                     toleranciaZero={Boolean(criterio.toleranciaZero)}
                     readOnly
+                    faixas={faixas}
                   />
                 </div>
                 {justColetivas[criterio.id]?.trim() ? (
@@ -582,6 +586,7 @@ export function AvaliacaoForm({
                           }))
                         }
                         toleranciaZero={Boolean(criterio.toleranciaZero)}
+                        faixas={faixas}
                       />
                     </div>
 

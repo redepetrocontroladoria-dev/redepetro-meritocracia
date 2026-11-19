@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { getSessionGestor } from "@/actions/auth";
 import { getAvaliacaoParaEdicao } from "@/actions/avaliacoes";
 import { AvaliarWorkspace } from "@/components/AvaliarWorkspace";
+import { ensureFaixasPagamento } from "@/lib/faixasPagamento";
 import { prisma } from "@/lib/prisma";
 
 export const instant = false;
@@ -25,24 +26,33 @@ export default async function AvaliarPage({ searchParams }: AvaliarPageProps) {
     redirect("/avaliar");
   }
 
-  const [colaboradores, criterios, departamentos] = await Promise.all([
-    prisma.colaborador.findMany({
-      where: gestor.isDiretoria
-        ? undefined
-        : { departamentoId: { in: gestor.departamentoIds } },
-      orderBy: { nome: "asc" },
-      include: { departamento: true },
-    }),
-    prisma.criterioAvaliacao.findMany({
-      orderBy: { nome: "asc" },
-      include: {
-        departamentos: { select: { id: true } },
-      },
-    }),
-    gestor.isDiretoria
-      ? prisma.departamento.findMany({ orderBy: { nome: "asc" } })
-      : Promise.resolve(gestor.departamentos),
-  ]);
+  const [colaboradores, criterios, departamentos, faixasDb] =
+    await Promise.all([
+      prisma.colaborador.findMany({
+        where: gestor.isDiretoria
+          ? undefined
+          : { departamentoId: { in: gestor.departamentoIds } },
+        orderBy: { nome: "asc" },
+        include: { departamento: true },
+      }),
+      prisma.criterioAvaliacao.findMany({
+        orderBy: { nome: "asc" },
+        include: {
+          departamentos: { select: { id: true } },
+        },
+      }),
+      gestor.isDiretoria
+        ? prisma.departamento.findMany({ orderBy: { nome: "asc" } })
+        : Promise.resolve(gestor.departamentos),
+      ensureFaixasPagamento(),
+    ]);
+
+  const faixas = faixasDb.map((faixa) => ({
+    minPercentual: faixa.minPercentual,
+    maxPercentual: faixa.maxPercentual,
+    multiplicadorPeso: faixa.multiplicadorPeso,
+    descricao: faixa.descricao,
+  }));
 
   const criteriosMapped = criterios.map((criterio) => ({
     id: criterio.id,
@@ -80,6 +90,7 @@ export default async function AvaliarPage({ searchParams }: AvaliarPageProps) {
           departamentoId: colaborador.departamentoId,
         }))}
         criterios={criteriosMapped}
+        faixas={faixas}
         edicaoInicial={
           edicao
             ? {

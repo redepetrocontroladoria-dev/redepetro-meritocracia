@@ -4,6 +4,7 @@ import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import * as XLSX from "xlsx";
 import type { ResumoMetaEquipe } from "@/components/MetaEquipePanel";
+import { baixarOuAbrirPdf } from "@/lib/baixarPdf";
 import type { DesempenhoDepartamento } from "@/lib/desempenho";
 import { classificarNota } from "@/lib/escala";
 
@@ -278,7 +279,10 @@ export function RelatoriosExport({
       });
     }
 
-    doc.save("relatorio-avaliacoes.pdf");
+    baixarOuAbrirPdf(
+      doc,
+      `relatorio-redepetro-${competenciaLabel.replace(/\//g, "-")}.pdf`,
+    );
   }
 
   return (

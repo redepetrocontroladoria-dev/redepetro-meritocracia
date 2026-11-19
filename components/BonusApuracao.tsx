@@ -9,6 +9,7 @@ import {
   excluirFaixaPagamento,
   salvarFaixaPagamento,
 } from "@/actions/bonus";
+import { baixarOuAbrirPdf } from "@/lib/baixarPdf";
 import {
   calcularBonusColaborador,
   formatarMoeda,
@@ -356,7 +357,10 @@ export function BonusApuracao({
           ?.finalY ?? finalY;
     }
 
-    doc.save("apuracao-bonus.pdf");
+    baixarOuAbrirPdf(
+      doc,
+      `apuracao-bonus-redepetro-${competenciaLabel.replace(/\//g, "-")}.pdf`,
+    );
   }
 
   return (

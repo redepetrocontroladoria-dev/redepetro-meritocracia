@@ -6,6 +6,7 @@ import {
   getAvaliacaoDepartamento,
   salvarAvaliacaoDepartamento,
 } from "@/actions/avaliacoes";
+import { SeletorNotaDegrau } from "@/components/SeletorNotaDegrau";
 import { MESES } from "@/lib/competencia";
 
 type DepartamentoOption = { id: string; nome: string };
@@ -17,6 +18,7 @@ type CriterioOption = {
   descricao: string | null;
   isGlobal: boolean;
   tipoAvaliacao: string;
+  toleranciaZero?: boolean;
   departamentoIds: string[];
 };
 
@@ -206,24 +208,22 @@ export function AvaliacaoDepartamentoForm({
                   </p>
                   <p className="text-xs text-zinc-500">
                     Peso {criterio.peso.toFixed(1)}% · Coletivo
+                    {criterio.toleranciaZero ? " · Tolerância zero" : ""}
                   </p>
                 </div>
               </div>
               {criterio.descricao ? (
                 <p className="mb-2 text-xs text-zinc-500">{criterio.descricao}</p>
               ) : null}
-              <input
-                type="text"
-                inputMode="decimal"
-                value={notas[criterio.id] ?? ""}
-                onChange={(e) =>
+              <SeletorNotaDegrau
+                valor={notas[criterio.id] ?? ""}
+                onChange={(nota) =>
                   setNotas((atual) => ({
                     ...atual,
-                    [criterio.id]: e.target.value,
+                    [criterio.id]: nota,
                   }))
                 }
-                placeholder="Nota 0 a 10"
-                className="w-full max-w-[10rem] rounded-md border border-zinc-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-zinc-200"
+                toleranciaZero={Boolean(criterio.toleranciaZero)}
               />
             </div>
           ))}

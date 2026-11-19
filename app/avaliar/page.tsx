@@ -52,6 +52,7 @@ export default async function AvaliarPage({ searchParams }: AvaliarPageProps) {
     descricao: criterio.descricao,
     isGlobal: criterio.isGlobal,
     tipoAvaliacao: criterio.tipoAvaliacao,
+    toleranciaZero: criterio.toleranciaZero,
     departamentoIds: criterio.departamentos.map((d) => d.id),
   }));
 

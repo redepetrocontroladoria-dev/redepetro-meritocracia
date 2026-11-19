@@ -7,6 +7,10 @@ import {
   salvarAvaliacao,
   verificarAvaliacaoExistente,
 } from "@/actions/avaliacoes";
+import {
+  LEGENDA_REGUA_DEGRAUS,
+  SeletorNotaDegrau,
+} from "@/components/SeletorNotaDegrau";
 import { MESES } from "@/lib/competencia";
 import { calcularNotaFinalConsolidada } from "@/lib/avaliacaoConsolidada";
 import { classificarNota } from "@/lib/escala";
@@ -26,6 +30,7 @@ type CriterioOption = {
   descricao: string | null;
   isGlobal: boolean;
   tipoAvaliacao: string;
+  toleranciaZero?: boolean;
   departamentoIds: string[];
 };
 
@@ -43,29 +48,6 @@ type AvaliacaoFormProps = {
   criterios: CriterioOption[];
   edicaoInicial?: EdicaoInicial | null;
 };
-
-const LEGENDA = [
-  {
-    faixa: "0.0 – 3.9",
-    texto: "Abaixo das expectativas (Não atendeu)",
-    className: "bg-red-100 text-red-800",
-  },
-  {
-    faixa: "4.0 – 6.9",
-    texto: "Atende parcialmente",
-    className: "bg-amber-100 text-amber-800",
-  },
-  {
-    faixa: "7.0 – 8.9",
-    texto: "Atende plenamente às expectativas",
-    className: "bg-blue-100 text-blue-800",
-  },
-  {
-    faixa: "9.0 – 10.0",
-    texto: "Supera consistentemente (Excepcional)",
-    className: "bg-emerald-100 text-emerald-800",
-  },
-];
 
 const agora = new Date();
 const ANOS = Array.from({ length: 6 }, (_, i) => agora.getFullYear() - 2 + i);
@@ -378,21 +360,24 @@ export function AvaliacaoForm({
       </section>
 
       <section className="rounded-lg border border-zinc-200 bg-white p-5 shadow-sm">
-        <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-brand-secondary">
-          Escala de Notas Padronizada
+        <h2 className="mb-1 text-sm font-semibold uppercase tracking-wide text-brand-secondary">
+          Régua de Degraus (Bônus)
         </h2>
-        <div className="grid gap-2 sm:grid-cols-2">
-          {LEGENDA.map((item) => (
+        <p className="mb-3 text-xs text-zinc-500">
+          Atingimento da meta → parte do peso paga no bônus.
+        </p>
+        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+          {LEGENDA_REGUA_DEGRAUS.map((item) => (
             <div
-              key={item.faixa}
-              className="flex items-start gap-2 rounded-md border border-zinc-100 px-3 py-2"
+              key={item.atingimento}
+              className="flex items-center justify-between gap-2 rounded-md border border-zinc-100 border-l-4 border-l-brand-primary px-3 py-2"
             >
-              <span
-                className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${item.className}`}
-              >
-                {item.faixa}
+              <span className="text-xs font-semibold text-brand-secondary">
+                {item.atingimento}
               </span>
-              <p className="text-xs text-zinc-600">{item.texto}</p>
+              <span className="rounded-full bg-brand-secondary px-2 py-0.5 text-[11px] font-semibold text-white">
+                {item.parte}
+              </span>
             </div>
           ))}
         </div>
@@ -479,13 +464,20 @@ export function AvaliacaoForm({
                 </h3>
                 <p className="mt-0.5 text-xs text-zinc-500">
                   Peso: {criterio.peso.toFixed(1)}% · Coletivo (Departamento)
+                  {criterio.toleranciaZero ? " · Tolerância zero" : ""}
                 </p>
-                <p className="mt-3 text-sm font-semibold text-brand-secondary">
-                  Nota da equipe:{" "}
-                  {Number.isFinite(notasColetivas[criterio.id])
-                    ? notasColetivas[criterio.id].toFixed(1)
-                    : "—"}
-                </p>
+                <div className="mt-3">
+                  <SeletorNotaDegrau
+                    valor={
+                      Number.isFinite(notasColetivas[criterio.id])
+                        ? String(notasColetivas[criterio.id])
+                        : ""
+                    }
+                    onChange={() => undefined}
+                    toleranciaZero={Boolean(criterio.toleranciaZero)}
+                    readOnly
+                  />
+                </div>
               </div>
             ))}
 
@@ -506,6 +498,7 @@ export function AvaliacaoForm({
                       </h3>
                       <p className="mt-0.5 text-xs text-zinc-500">
                         Peso: {criterio.peso.toFixed(1)}% · Individual
+                        {criterio.toleranciaZero ? " · Tolerância zero" : ""}
                       </p>
                       {criterio.descricao ? (
                         <div className="mt-3 rounded-md border-l-4 border-l-brand-secondary bg-zinc-50 px-3 py-2 text-xs leading-relaxed text-zinc-600">
@@ -523,25 +516,21 @@ export function AvaliacaoForm({
                     </div>
                   </div>
 
-                  <label className="mt-4 block space-y-1.5">
-                    <span className="text-sm font-medium text-zinc-700">
-                      Nota (0.0 a 10.0)
-                    </span>
-                    <input
-                      type="text"
-                      inputMode="decimal"
-                      value={notas[criterio.id] ?? ""}
-                      onChange={(event) =>
+                  <div className="mt-4">
+                    <p className="mb-2 text-sm font-medium text-zinc-700">
+                      Resultado / Atingimento
+                    </p>
+                    <SeletorNotaDegrau
+                      valor={notas[criterio.id] ?? ""}
+                      onChange={(nota) =>
                         setNotas((atual) => ({
                           ...atual,
-                          [criterio.id]: event.target.value,
+                          [criterio.id]: nota,
                         }))
                       }
-                      placeholder="Ex: 8.5"
-                      className="w-full max-w-[12rem] rounded-md border border-zinc-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-zinc-200"
-                      required
+                      toleranciaZero={Boolean(criterio.toleranciaZero)}
                     />
-                  </label>
+                  </div>
                 </div>
               ))
             )}

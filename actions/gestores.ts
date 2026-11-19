@@ -5,136 +5,188 @@ import { revalidatePath } from "next/cache";
 import { requireDiretoria } from "@/actions/auth";
 import { prisma } from "@/lib/prisma";
 
-function lerDepartamentoIds(formData: FormData) {
-  return formData
-    .getAll("departamentoIds")
-    .map((item) => String(item).trim())
-    .filter(Boolean);
-}
+export type GestorActionResult = {
+  ok: boolean;
+  error?: string;
+};
 
-export async function criarGestor(formData: FormData) {
+export async function criarGestor(dados: {
+  nome: string;
+  email: string;
+  senha: string;
+  departamentoIds: string[];
+  isDiretoria: boolean;
+}): Promise<GestorActionResult> {
   await requireDiretoria();
 
-  const nome = String(formData.get("nome") ?? "").trim();
-  const email = String(formData.get("email") ?? "").trim().toLowerCase();
-  const senha = String(formData.get("senha") ?? "");
-  const isDiretoria = formData.get("isDiretoria") === "on";
-  const departamentoIds = lerDepartamentoIds(formData);
+  try {
+    const nome = String(dados.nome ?? "").trim();
+    const email = String(dados.email ?? "").trim().toLowerCase();
+    const senha = String(dados.senha ?? "");
+    const isDiretoria = Boolean(dados.isDiretoria);
+    const departamentoIds = (dados.departamentoIds ?? [])
+      .map((id) => String(id).trim())
+      .filter(Boolean);
 
-  if (!nome || !email || !senha) {
-    throw new Error("Nome, e-mail e senha são obrigatórios.");
-  }
+    if (!nome || !email || !senha) {
+      return { ok: false, error: "Nome, e-mail e senha são obrigatórios." };
+    }
 
-  if (!isDiretoria && departamentoIds.length === 0) {
-    throw new Error("Selecione pelo menos 1 departamento para o gestor.");
-  }
+    if (!isDiretoria && departamentoIds.length === 0) {
+      return {
+        ok: false,
+        error: "Selecione pelo menos 1 departamento para o gestor.",
+      };
+    }
 
-  const existente = await prisma.gestor.findUnique({ where: { email } });
-  if (existente) throw new Error("Já existe um gestor com este e-mail.");
+    const existente = await prisma.gestor.findUnique({ where: { email } });
+    if (existente) {
+      return { ok: false, error: "Já existe um gestor com este e-mail." };
+    }
 
-  await prisma.gestor.create({
-    data: {
-      nome,
-      email,
-      senha: bcrypt.hashSync(senha, 10),
-      isDiretoria,
-      departamentos: {
-        connect: departamentoIds.map((id) => ({ id })),
+    await prisma.gestor.create({
+      data: {
+        nome,
+        email,
+        senha: bcrypt.hashSync(senha, 10),
+        isDiretoria,
+        departamentos: {
+          connect: departamentoIds.map((id) => ({ id })),
+        },
       },
-    },
-  });
+    });
 
-  revalidatePath("/gestores");
+    revalidatePath("/gestores");
+    return { ok: true };
+  } catch {
+    return { ok: false, error: "Erro ao cadastrar gestor." };
+  }
 }
 
 export async function atualizarGestor(
   id: string,
-  dados: {
-    nome: string;
-    email: string;
-    senha?: string;
-    departamentoIds: string[];
-    isDiretoria: boolean;
-  },
-) {
+  nome: string,
+  email: string,
+  senha: string,
+  departamentoIds: string[],
+  isDiretoria: boolean,
+): Promise<GestorActionResult> {
   await requireDiretoria();
 
-  const gestorId = id?.trim();
-  const nome = dados.nome?.trim() ?? "";
-  const email = dados.email?.trim().toLowerCase() ?? "";
-  const senha = dados.senha?.trim() ?? "";
-  const departamentoIds = dados.departamentoIds ?? [];
+  try {
+    const gestorId = String(id ?? "").trim();
+    const nomeLimpo = String(nome ?? "").trim();
+    const emailLimpo = String(email ?? "").trim().toLowerCase();
+    const senhaLimpa = String(senha ?? "").trim();
+    const depts = (departamentoIds ?? [])
+      .map((deptId) => String(deptId).trim())
+      .filter(Boolean);
 
-  if (!gestorId || !nome || !email) {
-    throw new Error("Nome e e-mail são obrigatórios.");
-  }
+    if (!gestorId || !nomeLimpo || !emailLimpo) {
+      return { ok: false, error: "Nome e e-mail são obrigatórios." };
+    }
 
-  if (!dados.isDiretoria && departamentoIds.length === 0) {
-    throw new Error("Selecione pelo menos 1 departamento para o gestor.");
-  }
+    if (!isDiretoria && depts.length === 0) {
+      return {
+        ok: false,
+        error: "Selecione pelo menos 1 departamento para o gestor.",
+      };
+    }
 
-  const existente = await prisma.gestor.findFirst({
-    where: { email, NOT: { id: gestorId } },
-  });
-  if (existente) throw new Error("Já existe um gestor com este e-mail.");
+    const existente = await prisma.gestor.findFirst({
+      where: { email: emailLimpo, NOT: { id: gestorId } },
+    });
+    if (existente) {
+      return { ok: false, error: "Já existe um gestor com este e-mail." };
+    }
 
-  await prisma.gestor.update({
-    where: { id: gestorId },
-    data: {
-      nome,
-      email,
-      isDiretoria: dados.isDiretoria,
-      ...(senha ? { senha: bcrypt.hashSync(senha, 10) } : {}),
-      departamentos: {
-        set: departamentoIds.map((deptId) => ({ id: deptId })),
+    await prisma.gestor.update({
+      where: { id: gestorId },
+      data: {
+        nome: nomeLimpo,
+        email: emailLimpo,
+        isDiretoria: Boolean(isDiretoria),
+        ...(senhaLimpa ? { senha: bcrypt.hashSync(senhaLimpa, 10) } : {}),
+        departamentos: {
+          set: depts.map((deptId) => ({ id: deptId })),
+        },
       },
-    },
-  });
+    });
 
-  revalidatePath("/gestores");
+    revalidatePath("/gestores");
+    return { ok: true };
+  } catch {
+    return { ok: false, error: "Erro ao atualizar gestor." };
+  }
 }
 
-export async function redefinirSenhaGestor(id: string, novaSenha: string) {
+export async function redefinirSenhaGestor(
+  id: string,
+  novaSenha: string,
+): Promise<GestorActionResult> {
   await requireDiretoria();
 
-  const gestorId = id?.trim();
-  const senha = novaSenha?.trim() ?? "";
+  try {
+    const gestorId = String(id ?? "").trim();
+    const senha = String(novaSenha ?? "").trim();
 
-  if (!gestorId) throw new Error("ID do gestor é obrigatório.");
-  if (!senha || senha.length < 4) {
-    throw new Error("Informe uma senha temporária com pelo menos 4 caracteres.");
+    if (!gestorId) {
+      return { ok: false, error: "ID do gestor é obrigatório." };
+    }
+    if (!senha || senha.length < 4) {
+      return {
+        ok: false,
+        error: "Informe uma senha temporária com pelo menos 4 caracteres.",
+      };
+    }
+
+    const gestor = await prisma.gestor.findUnique({ where: { id: gestorId } });
+    if (!gestor) {
+      return { ok: false, error: "Gestor não encontrado." };
+    }
+
+    await prisma.gestor.update({
+      where: { id: gestorId },
+      data: { senha: bcrypt.hashSync(senha, 10) },
+    });
+
+    revalidatePath("/gestores");
+    return { ok: true };
+  } catch {
+    return { ok: false, error: "Erro ao redefinir senha." };
   }
-
-  const gestor = await prisma.gestor.findUnique({ where: { id: gestorId } });
-  if (!gestor) throw new Error("Gestor não encontrado.");
-
-  await prisma.gestor.update({
-    where: { id: gestorId },
-    data: { senha: bcrypt.hashSync(senha, 10) },
-  });
-
-  revalidatePath("/gestores");
 }
 
-export async function excluirGestor(id: string) {
+export async function excluirGestor(id: string): Promise<GestorActionResult> {
   await requireDiretoria();
 
-  const gestorId = id?.trim();
-  if (!gestorId) throw new Error("ID do gestor é obrigatório.");
+  try {
+    const gestorId = String(id ?? "").trim();
+    if (!gestorId) {
+      return { ok: false, error: "ID do gestor é obrigatório." };
+    }
 
-  const gestor = await prisma.gestor.findUnique({
-    where: { id: gestorId },
-    include: { _count: { select: { avaliacoes: true } } },
-  });
+    const gestor = await prisma.gestor.findUnique({
+      where: { id: gestorId },
+      include: { _count: { select: { avaliacoes: true } } },
+    });
 
-  if (!gestor) throw new Error("Gestor não encontrado.");
+    if (!gestor) {
+      return { ok: false, error: "Gestor não encontrado." };
+    }
 
-  if (gestor._count.avaliacoes > 0) {
-    throw new Error(
-      "Não é possível excluir: existem avaliações vinculadas a este gestor.",
-    );
+    if (gestor._count.avaliacoes > 0) {
+      return {
+        ok: false,
+        error:
+          "Não é possível excluir: existem avaliações vinculadas a este gestor.",
+      };
+    }
+
+    await prisma.gestor.delete({ where: { id: gestorId } });
+    revalidatePath("/gestores");
+    return { ok: true };
+  } catch {
+    return { ok: false, error: "Erro ao excluir gestor." };
   }
-
-  await prisma.gestor.delete({ where: { id: gestorId } });
-  revalidatePath("/gestores");
 }

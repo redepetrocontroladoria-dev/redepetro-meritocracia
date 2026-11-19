@@ -7,10 +7,7 @@ import {
   salvarAvaliacao,
   verificarAvaliacaoExistente,
 } from "@/actions/avaliacoes";
-import {
-  LEGENDA_REGUA_DEGRAUS,
-  SeletorNotaDegrau,
-} from "@/components/SeletorNotaDegrau";
+import { SeletorNotaDegrau } from "@/components/SeletorNotaDegrau";
 import { MESES } from "@/lib/competencia";
 import {
   calcularNotaFinalConsolidada,
@@ -50,15 +47,18 @@ type EdicaoInicial = {
 type AvaliacaoFormProps = {
   colaboradores: ColaboradorOption[];
   criterios: CriterioOption[];
+  departamentoId: string;
+  mes: number;
+  ano: number;
   edicaoInicial?: EdicaoInicial | null;
 };
-
-const agora = new Date();
-const ANOS = Array.from({ length: 6 }, (_, i) => agora.getFullYear() - 2 + i);
 
 export function AvaliacaoForm({
   colaboradores,
   criterios,
+  departamentoId,
+  mes,
+  ano,
   edicaoInicial = null,
 }: AvaliacaoFormProps) {
   const router = useRouter();
@@ -67,8 +67,6 @@ export function AvaliacaoForm({
   const [colaboradorId, setColaboradorId] = useState(
     edicaoInicial?.colaboradorId ?? "",
   );
-  const [mes, setMes] = useState(edicaoInicial?.mes ?? agora.getMonth() + 1);
-  const [ano, setAno] = useState(edicaoInicial?.ano ?? agora.getFullYear());
   const [notas, setNotas] = useState<Record<string, string>>(
     edicaoInicial?.notas ?? {},
   );
@@ -94,10 +92,43 @@ export function AvaliacaoForm({
   const [coletivasCarregadas, setColetivasCarregadas] = useState(false);
   const [pending, startTransition] = useTransition();
 
-  const colaboradorSelecionado = useMemo(
-    () => colaboradores.find((item) => item.id === colaboradorId) ?? null,
-    [colaboradores, colaboradorId],
+  const colaboradoresDoDepartamento = useMemo(
+    () =>
+      departamentoId
+        ? colaboradores.filter((item) => item.departamentoId === departamentoId)
+        : [],
+    [colaboradores, departamentoId],
   );
+
+  const mesLabel =
+    MESES.find((item) => item.value === mes)?.label ?? String(mes);
+
+  const colaboradorSelecionado = useMemo(
+    () =>
+      colaboradoresDoDepartamento.find((item) => item.id === colaboradorId) ??
+      null,
+    [colaboradoresDoDepartamento, colaboradorId],
+  );
+
+  useEffect(() => {
+    if (!colaboradorId) return;
+    const pertence = colaboradoresDoDepartamento.some(
+      (item) => item.id === colaboradorId,
+    );
+    if (pertence) return;
+    setColaboradorId("");
+    setNotas({});
+    setJustificativas({});
+    setObservacoes("");
+    setAvaliacaoId("");
+    setModoEdicao(false);
+    setAvisoExistente(null);
+    setSucesso(null);
+    setErro(null);
+    setNotasColetivas({});
+    setJustColetivas({});
+    setColetivasCarregadas(false);
+  }, [colaboradorId, colaboradoresDoDepartamento]);
 
   const criteriosDoSetor = useMemo(() => {
     if (!colaboradorSelecionado) return [];
@@ -171,7 +202,9 @@ export function AvaliacaoForm({
       return;
     }
 
-    const colaborador = colaboradores.find((item) => item.id === colaboradorId);
+    const colaborador = colaboradoresDoDepartamento.find(
+      (item) => item.id === colaboradorId,
+    );
     if (!colaborador) return;
 
     getAvaliacaoDepartamento(colaborador.departamentoId, mes, ano).then(
@@ -369,113 +402,60 @@ export function AvaliacaoForm({
 
       <section className="overflow-hidden rounded-lg border border-zinc-200 bg-white shadow-sm">
         <h2 className="bg-brand-secondary px-5 py-3 text-sm font-semibold uppercase tracking-wide text-white">
-          Competência
+          Bloco 2 — Avaliação Individual
         </h2>
-        <div className="grid gap-4 p-5 sm:grid-cols-2">
+        <div className="space-y-4 p-5">
+          <p className="rounded-md border border-zinc-100 bg-zinc-50 px-3 py-2 text-xs text-zinc-600">
+            Competência sincronizada com o Bloco 1:{" "}
+            <span className="font-semibold text-brand-secondary">
+              {mesLabel}/{ano}
+            </span>
+          </p>
           <label className="block space-y-1.5">
-            <span className="text-sm font-medium text-zinc-700">Mês</span>
+            <span className="text-sm font-medium text-zinc-700">
+              Selecionar colaborador
+            </span>
             <select
-              value={mes}
-              onChange={(e) => setMes(Number(e.target.value))}
-              className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-zinc-200"
+              value={colaboradorId}
+              onChange={(event) => {
+                setColaboradorId(event.target.value);
+                setNotas({});
+                setJustificativas({});
+                setObservacoes("");
+                setAvaliacaoId("");
+                setModoEdicao(false);
+                setAvisoExistente(null);
+                setSucesso(null);
+                setErro(null);
+              }}
+              className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-zinc-200"
+              required
             >
-              {MESES.map((item) => (
-                <option key={item.value} value={item.value}>
-                  {item.label}
+              <option value="">Selecione...</option>
+              {colaboradoresDoDepartamento.map((colaborador) => (
+                <option key={colaborador.id} value={colaborador.id}>
+                  {colaborador.nome} — {colaborador.cargo}
                 </option>
               ))}
             </select>
+            {departamentoId && colaboradoresDoDepartamento.length === 0 ? (
+              <p className="text-xs text-zinc-500">
+                Nenhum colaborador neste departamento.
+              </p>
+            ) : null}
           </label>
-          <label className="block space-y-1.5">
-            <span className="text-sm font-medium text-zinc-700">Ano</span>
-            <select
-              value={ano}
-              onChange={(e) => setAno(Number(e.target.value))}
-              className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-zinc-200"
-            >
-              {ANOS.map((item) => (
-                <option key={item} value={item}>
-                  {item}
-                </option>
-              ))}
-            </select>
-          </label>
+          {avisoExistente ? (
+            <p className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800">
+              {avisoExistente}
+            </p>
+          ) : null}
         </div>
-      </section>
-
-      <section className="overflow-hidden rounded-lg border border-zinc-200 bg-white shadow-sm">
-        <h2 className="bg-brand-secondary px-5 py-3 text-sm font-semibold uppercase tracking-wide text-white">
-          Régua de Degraus de Bônus
-        </h2>
-        <div className="p-5">
-          <p className="mb-3 text-xs text-zinc-500">
-            Atingimento da meta → parte do peso paga no bônus.
-          </p>
-          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-            {LEGENDA_REGUA_DEGRAUS.map((item) => (
-              <div
-                key={item.atingimento}
-                className="flex items-center justify-between gap-2 rounded-md border border-zinc-100 border-l-4 border-l-brand-primary px-3 py-2.5"
-              >
-                <span className="text-xs font-semibold text-brand-secondary">
-                  {item.atingimento}
-                </span>
-                <span className="rounded-full bg-brand-secondary px-2.5 py-0.5 text-[11px] font-semibold text-white">
-                  {item.parte}
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      <section className="overflow-hidden rounded-lg border border-zinc-200 bg-white shadow-sm">
-        <h2 className="bg-brand-secondary px-5 py-3 text-sm font-semibold uppercase tracking-wide text-white">
-          Colaborador
-        </h2>
-        <label className="block space-y-1.5 p-5">
-          <span className="text-sm font-medium text-zinc-700">
-            Selecionar colaborador
-          </span>
-          <select
-            value={colaboradorId}
-            onChange={(event) => {
-              setColaboradorId(event.target.value);
-              setNotas({});
-              setJustificativas({});
-              setObservacoes("");
-              setAvaliacaoId("");
-              setModoEdicao(false);
-              setAvisoExistente(null);
-              setSucesso(null);
-              setErro(null);
-            }}
-            className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-zinc-200"
-            required
-          >
-            <option value="">Selecione...</option>
-            {colaboradores.map((colaborador) => (
-              <option key={colaborador.id} value={colaborador.id}>
-                {colaborador.nome} — {colaborador.cargo} (
-                {colaborador.departamento})
-              </option>
-            ))}
-          </select>
-        </label>
-        {avisoExistente ? (
-          <p className="mx-5 mb-5 rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800">
-            {avisoExistente}
-          </p>
-        ) : null}
       </section>
 
       {colaboradorId ? (
         <>
           <section className="space-y-3">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <h2 className="text-sm font-semibold uppercase tracking-wide text-zinc-500">
-                Bloco 2 — Avaliação Individual
-              </h2>
+            <div className="flex flex-wrap items-center justify-end gap-2">
               <span
                 className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
                   pesosCompletos
@@ -707,7 +687,7 @@ export function AvaliacaoForm({
         </>
       ) : (
         <div className="rounded-lg border border-dashed border-zinc-200 bg-white px-4 py-10 text-center text-sm text-zinc-500">
-          Selecione a competência e um colaborador para carregar os critérios.
+          Selecione um colaborador do departamento escolhido no Bloco 1.
         </div>
       )}
     </form>

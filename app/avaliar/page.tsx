@@ -1,8 +1,7 @@
 import { redirect } from "next/navigation";
 import { getSessionGestor } from "@/actions/auth";
 import { getAvaliacaoParaEdicao } from "@/actions/avaliacoes";
-import { AvaliacaoDepartamentoForm } from "@/components/AvaliacaoDepartamentoForm";
-import { AvaliacaoForm } from "@/components/AvaliacaoForm";
+import { AvaliarWorkspace } from "@/components/AvaliarWorkspace";
 import { prisma } from "@/lib/prisma";
 
 export const instant = false;
@@ -68,15 +67,11 @@ export default async function AvaliarPage({ searchParams }: AvaliarPageProps) {
         </p>
       </div>
 
-      <AvaliacaoDepartamentoForm
+      <AvaliarWorkspace
         departamentos={departamentos.map((d) => ({
           id: d.id,
           nome: d.nome,
         }))}
-        criterios={criteriosMapped}
-      />
-
-      <AvaliacaoForm
         colaboradores={colaboradores.map((colaborador) => ({
           id: colaborador.id,
           nome: colaborador.nome,

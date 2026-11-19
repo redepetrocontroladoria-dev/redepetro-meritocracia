@@ -6,10 +6,7 @@ import {
   getAvaliacaoDepartamento,
   salvarAvaliacaoDepartamento,
 } from "@/actions/avaliacoes";
-import {
-  LEGENDA_REGUA_DEGRAUS,
-  SeletorNotaDegrau,
-} from "@/components/SeletorNotaDegrau";
+import { SeletorNotaDegrau } from "@/components/SeletorNotaDegrau";
 import { exigeJustificativa } from "@/lib/avaliacaoConsolidada";
 import { MESES } from "@/lib/competencia";
 
@@ -32,16 +29,23 @@ const ANOS = Array.from({ length: 6 }, (_, i) => agora.getFullYear() - 2 + i);
 export function AvaliacaoDepartamentoForm({
   departamentos,
   criterios,
+  departamentoId,
+  mes,
+  ano,
+  onDepartamentoChange,
+  onMesChange,
+  onAnoChange,
 }: {
   departamentos: DepartamentoOption[];
   criterios: CriterioOption[];
+  departamentoId: string;
+  mes: number;
+  ano: number;
+  onDepartamentoChange: (id: string) => void;
+  onMesChange: (mes: number) => void;
+  onAnoChange: (ano: number) => void;
 }) {
   const router = useRouter();
-  const [departamentoId, setDepartamentoId] = useState(
-    departamentos[0]?.id ?? "",
-  );
-  const [mes, setMes] = useState(agora.getMonth() + 1);
-  const [ano, setAno] = useState(agora.getFullYear());
   const [notas, setNotas] = useState<Record<string, string>>({});
   const [justificativas, setJustificativas] = useState<Record<string, string>>(
     {},
@@ -175,34 +179,12 @@ export function AvaliacaoDepartamentoForm({
         </p>
       </div>
 
-      <div className="rounded-md border border-zinc-100 bg-zinc-50 px-4 py-3">
-        <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-brand-secondary">
-          Régua de Degraus de Bônus
-        </p>
-        <div className="flex flex-wrap gap-1.5">
-          {LEGENDA_REGUA_DEGRAUS.map((item) => (
-            <span
-              key={item.atingimento}
-              className="inline-flex items-center gap-1.5 rounded-full border border-zinc-200 bg-white px-2.5 py-1 text-[11px]"
-            >
-              <span className="font-semibold text-brand-primary">
-                {item.atingimento}
-              </span>
-              <span className="text-zinc-500">=</span>
-              <span className="font-medium text-brand-secondary">
-                {item.parte}
-              </span>
-            </span>
-          ))}
-        </div>
-      </div>
-
       <div className="grid gap-3 sm:grid-cols-3">
         <label className="block space-y-1.5">
           <span className="text-sm font-medium text-zinc-700">Departamento</span>
           <select
             value={departamentoId}
-            onChange={(e) => setDepartamentoId(e.target.value)}
+            onChange={(e) => onDepartamentoChange(e.target.value)}
             className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-zinc-200"
           >
             {departamentos.map((departamento) => (
@@ -216,7 +198,7 @@ export function AvaliacaoDepartamentoForm({
           <span className="text-sm font-medium text-zinc-700">Mês</span>
           <select
             value={mes}
-            onChange={(e) => setMes(Number(e.target.value))}
+            onChange={(e) => onMesChange(Number(e.target.value))}
             className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-zinc-200"
           >
             {MESES.map((item) => (
@@ -230,7 +212,7 @@ export function AvaliacaoDepartamentoForm({
           <span className="text-sm font-medium text-zinc-700">Ano</span>
           <select
             value={ano}
-            onChange={(e) => setAno(Number(e.target.value))}
+            onChange={(e) => onAnoChange(Number(e.target.value))}
             className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-zinc-200"
           >
             {ANOS.map((item) => (

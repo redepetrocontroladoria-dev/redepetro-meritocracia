@@ -97,6 +97,8 @@ export default async function RelatoriosPage({
       orderBy: [{ ano: "desc" }, { mes: "desc" }, { data: "desc" }],
       include: {
         colaborador: { include: { departamento: true } },
+        avaliadoPor: { select: { nome: true } },
+        gestor: { select: { nome: true } },
         itens: { include: { criterio: true } },
       },
     }),
@@ -157,7 +159,13 @@ export default async function RelatoriosPage({
 
   const coletivosPorChave = new Map<
     string,
-    { criterioId: string; criterioNome: string; peso: number; nota: number }[]
+    {
+      criterioId: string;
+      criterioNome: string;
+      peso: number;
+      nota: number;
+      justificativa?: string | null;
+    }[]
   >();
   for (const coletiva of avaliacoesColetivas) {
     coletivosPorChave.set(
@@ -167,6 +175,7 @@ export default async function RelatoriosPage({
         criterioNome: item.criterio.nome,
         peso: item.peso || item.criterio.peso,
         nota: item.nota,
+        justificativa: item.justificativa,
       })),
     );
   }
@@ -250,6 +259,7 @@ export default async function RelatoriosPage({
       criterioNome: item.criterio.nome,
       peso: item.criterio.peso,
       nota: item.notaObtida,
+      justificativa: item.justificativa,
     }));
     const consolidados = consolidarItensAvaliacao(individuais, coletivos);
 
@@ -270,12 +280,16 @@ export default async function RelatoriosPage({
       classificacao: faixa.label,
       variacaoBadgeClass: variacao.badgeClass,
       faixaBadgeClass: faixa.badgeClass,
+      gestorNome: avaliacao.avaliadoPor?.nome ?? avaliacao.gestor?.nome ?? null,
+      valorAlvo: avaliacao.colaborador.valorAlvo,
       itens: consolidados.map((item) => ({
         criterioId: item.criterioId,
         criterioNome: item.criterioNome ?? item.criterioId,
         peso: item.peso,
         nota: item.nota,
         pontos: (item.nota * item.peso) / 100,
+        justificativa: item.justificativa,
+        origem: item.origem,
       })),
     };
   });

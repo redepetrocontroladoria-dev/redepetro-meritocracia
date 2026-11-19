@@ -6,8 +6,13 @@ export type ItemNotaPeso = {
   peso: number;
   nota: number;
   toleranciaZero?: boolean;
+  justificativa?: string | null;
   origem?: "INDIVIDUAL" | "DEPARTAMENTO";
 };
+
+export function exigeJustificativa(nota: number, _toleranciaZero = false) {
+  return Number.isFinite(nota) && nota < 10;
+}
 
 export function consolidarItensAvaliacao(
   individuais: ItemNotaPeso[],

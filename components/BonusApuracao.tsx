@@ -16,6 +16,7 @@ import {
   type FaixaDegrau,
   type ResultadoBonus,
 } from "@/lib/calculoMeritocracia";
+import { gerarExtratoUmParaUmPdf } from "@/lib/extratoUmParaUm";
 
 export type ItemBonusInput = {
   criterioId: string;
@@ -23,6 +24,8 @@ export type ItemBonusInput = {
   peso: number;
   nota: number;
   toleranciaZero: boolean;
+  justificativa?: string | null;
+  origem?: "INDIVIDUAL" | "DEPARTAMENTO";
 };
 
 export type LinhaBonus = {
@@ -32,6 +35,7 @@ export type LinhaBonus = {
   departamento: string;
   valorAlvo: number;
   temAvaliacao: boolean;
+  gestorNome?: string | null;
   itens: ItemBonusInput[];
 };
 
@@ -598,22 +602,60 @@ export function BonusApuracao({
                         : "—"}
                     </td>
                     <td className="px-3 py-3 text-right">
-                      <button
-                        type="button"
-                        disabled={!item.resultado}
-                        onClick={() =>
-                          setDetalheId(
-                            detalheId === item.colaboradorId
-                              ? null
-                              : item.colaboradorId,
-                          )
-                        }
-                        className="rounded-md px-2 py-1 text-xs font-medium text-brand-primary hover:bg-red-50 disabled:opacity-40"
-                      >
-                        {detalheId === item.colaboradorId
-                          ? "Ocultar"
-                          : "Detalhar Cálculo"}
-                      </button>
+                      <div className="flex flex-wrap items-center justify-end gap-1">
+                        <button
+                          type="button"
+                          disabled={!item.resultado}
+                          onClick={() =>
+                            setDetalheId(
+                              detalheId === item.colaboradorId
+                                ? null
+                                : item.colaboradorId,
+                            )
+                          }
+                          className="rounded-md px-2 py-1 text-xs font-medium text-brand-primary hover:bg-red-50 disabled:opacity-40"
+                        >
+                          {detalheId === item.colaboradorId
+                            ? "Ocultar"
+                            : "Detalhar Cálculo"}
+                        </button>
+                        <button
+                          type="button"
+                          disabled={!item.resultado}
+                          onClick={() => {
+                            if (!item.resultado) return;
+                            gerarExtratoUmParaUmPdf({
+                              colaborador: item.colaborador,
+                              cargo: item.cargo,
+                              departamento: item.departamento,
+                              competencia: competenciaLabel,
+                              gestorResponsavel: item.gestorNome ?? "—",
+                              notaFinal:
+                                item.resultado.percentualAtingido / 10,
+                              percentualAtingido:
+                                item.resultado.percentualAtingido,
+                              valorFinalBonus: item.resultado.valorFinal,
+                              itens: item.resultado.memoria.map((c) => {
+                                const origem = item.itens.find(
+                                  (i) => i.criterioId === c.criterioId,
+                                );
+                                return {
+                                  criterioNome: c.criterioNome,
+                                  peso: c.peso,
+                                  nota: c.nota,
+                                  partePaga: c.partePaga,
+                                  contribuicao: c.contribuicao,
+                                  justificativa: origem?.justificativa,
+                                  origem: origem?.origem,
+                                };
+                              }),
+                            });
+                          }}
+                          className="rounded-md px-2 py-1 text-xs font-medium text-brand-secondary hover:bg-zinc-100 disabled:opacity-40"
+                        >
+                          Gerar Extrato 1:1 (PDF)
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -628,6 +670,12 @@ export function BonusApuracao({
           <h3 className="mb-1 text-sm font-semibold uppercase tracking-wide text-brand-secondary">
             Memória de Cálculo — {detalhe.colaborador}
           </h3>
+          <p className="mb-1 text-sm text-zinc-500">
+            Avaliado por:{" "}
+            <span className="font-semibold text-brand-secondary">
+              {detalhe.gestorNome ?? "—"}
+            </span>
+          </p>
           <p className="mb-4 text-sm text-zinc-500">
             {detalhe.resultado.percentualAtingido.toFixed(1)}% do valor-alvo ×{" "}
             {detalhe.diasTrabalhados}/30 ={" "}
@@ -652,32 +700,43 @@ export function BonusApuracao({
                     Contribuição
                   </th>
                   <th className="px-3 py-3 font-semibold">Faixa</th>
+                  <th className="px-3 py-3 font-semibold">Justificativa</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-100">
-                {detalhe.resultado.memoria.map((item) => (
-                  <tr key={item.criterioId}>
-                    <td className="px-3 py-3 font-medium">{item.criterioNome}</td>
-                    <td className="px-3 py-3 text-right tabular-nums">
-                      {item.peso.toFixed(1)}%
-                    </td>
-                    <td className="px-3 py-3 text-right tabular-nums">
-                      {item.nota.toFixed(1)}
-                    </td>
-                    <td className="px-3 py-3 text-right tabular-nums">
-                      {item.atingimento.toFixed(1)}%
-                    </td>
-                    <td className="px-3 py-3 text-right tabular-nums">
-                      {item.partePaga.toFixed(1)}%
-                    </td>
-                    <td className="px-3 py-3 text-right font-semibold tabular-nums">
-                      {item.contribuicao.toFixed(2)}%
-                    </td>
-                    <td className="px-3 py-3 text-xs text-zinc-600">
-                      {item.faixaDescricao}
-                    </td>
-                  </tr>
-                ))}
+                {detalhe.resultado.memoria.map((item) => {
+                  const origem = detalhe.itens.find(
+                    (i) => i.criterioId === item.criterioId,
+                  );
+                  return (
+                    <tr key={item.criterioId}>
+                      <td className="px-3 py-3 font-medium">
+                        {item.criterioNome}
+                      </td>
+                      <td className="px-3 py-3 text-right tabular-nums">
+                        {item.peso.toFixed(1)}%
+                      </td>
+                      <td className="px-3 py-3 text-right tabular-nums">
+                        {item.nota.toFixed(1)}
+                      </td>
+                      <td className="px-3 py-3 text-right tabular-nums">
+                        {item.atingimento.toFixed(1)}%
+                      </td>
+                      <td className="px-3 py-3 text-right tabular-nums">
+                        {item.partePaga.toFixed(1)}%
+                      </td>
+                      <td className="px-3 py-3 text-right font-semibold tabular-nums">
+                        {item.contribuicao.toFixed(2)}%
+                      </td>
+                      <td className="px-3 py-3 text-xs text-zinc-600">
+                        {item.faixaDescricao}
+                      </td>
+                      <td className="px-3 py-3 text-xs text-zinc-600">
+                        {origem?.justificativa?.trim() || "—"}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

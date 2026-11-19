@@ -1,10 +1,12 @@
 import Link from "next/link";
 import { getSessionGestor } from "@/actions/auth";
+import { DashboardExecutivo } from "@/components/DashboardExecutivo";
 import {
   calcularVariacao,
   formatarCompetencia,
   mediaDeNotas,
   competenciaAnterior,
+  nomeMes,
 } from "@/lib/competencia";
 import { getDesempenhoPorDepartamento } from "@/lib/desempenho";
 import { prisma } from "@/lib/prisma";
@@ -43,6 +45,11 @@ const cards = [
     diretoriaOnly: false,
   },
 ];
+
+function competenciaOffset(mes: number, ano: number, offset: number) {
+  const total = ano * 12 + (mes - 1) - offset;
+  return { mes: (total % 12) + 1, ano: Math.floor(total / 12) };
+}
 
 export default async function Home() {
   const gestor = await getSessionGestor();
@@ -124,6 +131,180 @@ export default async function Home() {
     (card) => !card.diretoriaOnly || gestor?.isDiretoria,
   );
 
+  let dashboard = null;
+
+  if (gestor) {
+    const departamentos = gestor.isDiretoria
+      ? await prisma.departamento.findMany({ orderBy: { nome: "asc" } })
+      : gestor.departamentos;
+
+    const deptIds = departamentos.map((d) => d.id);
+
+    const [
+      colaboradores,
+      avaliacoesMes,
+      coletivasMes,
+      criterios,
+      avaliacoes6m,
+    ] = await Promise.all([
+      prisma.colaborador.findMany({
+        where: { departamentoId: { in: deptIds } },
+        select: { id: true, departamentoId: true },
+      }),
+      prisma.avaliacao.findMany({
+        where: {
+          mes,
+          ano,
+          colaborador: { departamentoId: { in: deptIds } },
+        },
+        select: {
+          colaboradorId: true,
+          colaborador: { select: { departamentoId: true } },
+          itens: {
+            select: {
+              notaObtida: true,
+              criterioId: true,
+              criterio: { select: { id: true, nome: true } },
+            },
+          },
+        },
+      }),
+      prisma.avaliacaoDepartamento.findMany({
+        where: { mes, ano, departamentoId: { in: deptIds } },
+        select: { departamentoId: true },
+      }),
+      prisma.criterioAvaliacao.findMany({
+        include: { departamentos: { select: { id: true } } },
+      }),
+      prisma.avaliacao.findMany({
+        where: {
+          colaborador: { departamentoId: { in: deptIds } },
+          OR: Array.from({ length: 6 }, (_, i) => {
+            const c = competenciaOffset(mes, ano, i);
+            return { mes: c.mes, ano: c.ano };
+          }),
+        },
+        select: {
+          mes: true,
+          ano: true,
+          notaFinal: true,
+          colaborador: { select: { departamentoId: true } },
+        },
+      }),
+    ]);
+
+    const coletivasSet = new Set(coletivasMes.map((c) => c.departamentoId));
+    const avaliadosPorDept = new Map<string, Set<string>>();
+    for (const av of avaliacoesMes) {
+      const deptId = av.colaborador.departamentoId;
+      const set = avaliadosPorDept.get(deptId) ?? new Set();
+      set.add(av.colaboradorId);
+      avaliadosPorDept.set(deptId, set);
+    }
+
+    const pendencias = departamentos.map((dept) => {
+      const temCriteriosColetivos = criterios.some(
+        (c) =>
+          c.tipoAvaliacao === "DEPARTAMENTO" &&
+          (c.isGlobal || c.departamentos.some((d) => d.id === dept.id)),
+      );
+      const totalColaboradores = colaboradores.filter(
+        (c) => c.departamentoId === dept.id,
+      ).length;
+      return {
+        departamentoId: dept.id,
+        nome: dept.nome,
+        temCriteriosColetivos,
+        metasColetivasLancadas: coletivasSet.has(dept.id),
+        avaliados: avaliadosPorDept.get(dept.id)?.size ?? 0,
+        totalColaboradores,
+      };
+    });
+
+    const evolucao: {
+      label: string;
+      media: number | null;
+      serie: string;
+    }[] = [];
+
+    for (let i = 5; i >= 0; i--) {
+      const c = competenciaOffset(mes, ano, i);
+      const label = `${nomeMes(c.mes).slice(0, 3)}/${String(c.ano).slice(2)}`;
+      const doMes = avaliacoes6m.filter(
+        (a) => a.mes === c.mes && a.ano === c.ano,
+      );
+
+      if (gestor.isDiretoria) {
+        evolucao.push({
+          label,
+          serie: "Empresa",
+          media: mediaDeNotas(doMes.map((a) => a.notaFinal)),
+        });
+      }
+
+      for (const dept of departamentos) {
+        const notas = doMes
+          .filter((a) => a.colaborador.departamentoId === dept.id)
+          .map((a) => a.notaFinal);
+        evolucao.push({
+          label,
+          serie: dept.nome,
+          media: mediaDeNotas(notas),
+        });
+      }
+    }
+
+    const mediasPorCriterio = new Map<string, { nome: string; notas: number[] }>();
+    for (const av of avaliacoesMes) {
+      for (const item of av.itens) {
+        const atual = mediasPorCriterio.get(item.criterioId) ?? {
+          nome: item.criterio.nome,
+          notas: [],
+        };
+        atual.notas.push(item.notaObtida);
+        mediasPorCriterio.set(item.criterioId, atual);
+      }
+    }
+
+    for (const coletiva of await prisma.avaliacaoDepartamento.findMany({
+      where: { mes, ano, departamentoId: { in: deptIds } },
+      include: {
+        itens: {
+          include: { criterio: { select: { id: true, nome: true } } },
+        },
+      },
+    })) {
+      for (const item of coletiva.itens) {
+        const atual = mediasPorCriterio.get(item.criterioId) ?? {
+          nome: item.criterio.nome,
+          notas: [],
+        };
+        atual.notas.push(item.nota);
+        mediasPorCriterio.set(item.criterioId, atual);
+      }
+    }
+
+    const ofensores = Array.from(mediasPorCriterio.entries())
+      .map(([criterioId, data]) => ({
+        criterioId,
+        nome: data.nome,
+        media:
+          data.notas.reduce((t, n) => t + n, 0) / Math.max(1, data.notas.length),
+      }))
+      .sort((a, b) => a.media - b.media)
+      .slice(0, 5);
+
+    dashboard = (
+      <DashboardExecutivo
+        competenciaLabel={formatarCompetencia(mes, ano)}
+        pendencias={pendencias}
+        evolucao={evolucao}
+        ofensores={ofensores}
+        isDiretoria={gestor.isDiretoria}
+      />
+    );
+  }
+
   return (
     <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-10">
       <div className="mb-8">
@@ -164,6 +345,8 @@ export default async function Home() {
           </div>
         </section>
       ) : null}
+
+      {dashboard}
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {cardsVisiveis.map((card) => (

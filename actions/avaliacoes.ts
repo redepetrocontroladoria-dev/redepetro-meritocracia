@@ -2,12 +2,16 @@
 
 import { revalidatePath } from "next/cache";
 import { getSessionGestor } from "@/actions/auth";
-import { calcularNotaFinalConsolidada } from "@/lib/avaliacaoConsolidada";
+import {
+  calcularNotaFinalConsolidada,
+  exigeJustificativa,
+} from "@/lib/avaliacaoConsolidada";
 import { prisma } from "@/lib/prisma";
 
 type ItemAvaliacaoInput = {
   criterioId: string;
   notaObtida: number;
+  justificativa?: string | null;
 };
 
 type SalvarAvaliacaoInput = {
@@ -35,6 +39,23 @@ function criterioNoDepartamento(
     criterio.isGlobal ||
     criterio.departamentos.some((d) => d.id === departamentoId)
   );
+}
+
+function validarJustificativas(
+  itens: ItemAvaliacaoInput[],
+  criterios: { id: string; nome: string; toleranciaZero: boolean }[],
+) {
+  for (const item of itens) {
+    const criterio = criterios.find((c) => c.id === item.criterioId);
+    if (!criterio) continue;
+    if (
+      exigeJustificativa(item.notaObtida, criterio.toleranciaZero) &&
+      !String(item.justificativa ?? "").trim()
+    ) {
+      return `Justificativa obrigatória para o critério "${criterio.nome}" (nota < 10.0).`;
+    }
+  }
+  return null;
 }
 
 async function buscarCriteriosDoDepartamento(departamentoId: string) {
@@ -70,6 +91,7 @@ async function itensColetivosDepartamento(
     peso: item.peso || item.criterio.peso,
     nota: item.nota,
     toleranciaZero: item.criterio.toleranciaZero,
+    justificativa: item.justificativa,
   }));
 }
 
@@ -230,6 +252,11 @@ export async function salvarAvaliacao(
       }
     }
 
+    const erroJust = validarJustificativas(itens, criteriosIndividuais);
+    if (erroJust) {
+      return { ok: false, error: erroJust };
+    }
+
     if (criteriosColetivos.length > 0) {
       const coletivos = await itensColetivosDepartamento(
         colaborador.departamentoId,
@@ -260,6 +287,11 @@ export async function salvarAvaliacao(
     });
 
     const notaFinal = calcularNotaFinalConsolidada(individuais, coletivos);
+    const itensCreate = itens.map((item) => ({
+      criterioId: item.criterioId,
+      notaObtida: item.notaObtida,
+      justificativa: String(item.justificativa ?? "").trim() || null,
+    }));
 
     if (existente) {
       await prisma.itemAvaliacao.deleteMany({
@@ -270,15 +302,11 @@ export async function salvarAvaliacao(
         where: { id: existente.id },
         data: {
           gestorId: gestor.id,
+          avaliadoPorId: gestor.id,
           notaFinal,
           observacoes,
           data: new Date(),
-          itens: {
-            create: itens.map((item) => ({
-              criterioId: item.criterioId,
-              notaObtida: item.notaObtida,
-            })),
-          },
+          itens: { create: itensCreate },
         },
       });
     } else {
@@ -286,16 +314,12 @@ export async function salvarAvaliacao(
         data: {
           colaboradorId,
           gestorId: gestor.id,
+          avaliadoPorId: gestor.id,
           notaFinal,
           observacoes,
           mes,
           ano,
-          itens: {
-            create: itens.map((item) => ({
-              criterioId: item.criterioId,
-              notaObtida: item.notaObtida,
-            })),
-          },
+          itens: { create: itensCreate },
         },
       });
     }
@@ -389,6 +413,11 @@ export async function salvarAvaliacaoDepartamento(input: {
       }
     }
 
+    const erroJust = validarJustificativas(itens, criteriosColetivos);
+    if (erroJust) {
+      return { ok: false, error: erroJust };
+    }
+
     const existente = await prisma.avaliacaoDepartamento.findUnique({
       where: { departamentoId_mes_ano: { departamentoId, mes, ano } },
     });
@@ -397,6 +426,13 @@ export async function salvarAvaliacaoDepartamento(input: {
       criteriosColetivos.map((c) => [c.id, c.peso]),
     );
 
+    const itensCreate = itens.map((item) => ({
+      criterioId: item.criterioId,
+      nota: item.notaObtida,
+      peso: pesoPorCriterio.get(item.criterioId) ?? 0,
+      justificativa: String(item.justificativa ?? "").trim() || null,
+    }));
+
     if (existente) {
       await prisma.itemAvaliacaoDepartamento.deleteMany({
         where: { avaliacaoDepartamentoId: existente.id },
@@ -404,13 +440,8 @@ export async function salvarAvaliacaoDepartamento(input: {
       await prisma.avaliacaoDepartamento.update({
         where: { id: existente.id },
         data: {
-          itens: {
-            create: itens.map((item) => ({
-              criterioId: item.criterioId,
-              nota: item.notaObtida,
-              peso: pesoPorCriterio.get(item.criterioId) ?? 0,
-            })),
-          },
+          avaliadoPorId: gestor.id,
+          itens: { create: itensCreate },
         },
       });
     } else {
@@ -419,13 +450,8 @@ export async function salvarAvaliacaoDepartamento(input: {
           departamentoId,
           mes,
           ano,
-          itens: {
-            create: itens.map((item) => ({
-              criterioId: item.criterioId,
-              nota: item.notaObtida,
-              peso: pesoPorCriterio.get(item.criterioId) ?? 0,
-            })),
-          },
+          avaliadoPorId: gestor.id,
+          itens: { create: itensCreate },
         },
       });
     }
@@ -460,8 +486,14 @@ export async function getAvaliacaoDepartamento(
     },
     include: {
       itens: {
-        select: { criterioId: true, nota: true, peso: true },
+        select: {
+          criterioId: true,
+          nota: true,
+          peso: true,
+          justificativa: true,
+        },
       },
+      avaliadoPor: { select: { id: true, nome: true } },
     },
   });
 }
@@ -480,7 +512,7 @@ export async function verificarAvaliacaoExistente(
       notaFinal: true,
       observacoes: true,
       itens: {
-        select: { criterioId: true, notaObtida: true },
+        select: { criterioId: true, notaObtida: true, justificativa: true },
       },
     },
   });
@@ -496,7 +528,9 @@ export async function getAvaliacaoParaEdicao(avaliacaoId: string) {
     where: { id: avaliacaoId },
     include: {
       colaborador: { select: { id: true, departamentoId: true } },
-      itens: { select: { criterioId: true, notaObtida: true } },
+      itens: {
+        select: { criterioId: true, notaObtida: true, justificativa: true },
+      },
     },
   });
 

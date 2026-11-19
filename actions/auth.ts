@@ -3,9 +3,13 @@
 import bcrypt from "bcryptjs";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
+import {
+  SESSION_COOKIE,
+  signSessionToken,
+  verifySessionToken,
+} from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 
-const SESSION_COOKIE = "gestor_session";
 const ADMIN_EMAIL = "admin@redepetro.com.br";
 const ADMIN_SENHA = "admin";
 const ADMIN_NOME = "Administrador Redepetro";
@@ -60,7 +64,8 @@ export async function ensureDefaultAdmin() {
 
 export async function getSessionGestor(): Promise<SessionGestor | null> {
   const cookieStore = await cookies();
-  const sessionId = cookieStore.get(SESSION_COOKIE)?.value;
+  const token = cookieStore.get(SESSION_COOKIE)?.value;
+  const sessionId = verifySessionToken(token);
 
   if (!sessionId) {
     return null;
@@ -128,7 +133,7 @@ export async function login(
   }
 
   const cookieStore = await cookies();
-  cookieStore.set(SESSION_COOKIE, gestor.id, {
+  cookieStore.set(SESSION_COOKIE, signSessionToken(gestor.id), {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
     sameSite: "lax",

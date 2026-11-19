@@ -4,6 +4,12 @@ import { Fragment, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { excluirAvaliacao } from "@/actions/avaliacoes";
 import type { AvaliacaoRelatorio } from "@/components/RelatoriosExport";
+import {
+  encontrarFaixa,
+  FAIXAS_PADRAO,
+  notaParaAtingimento,
+} from "@/lib/calculoMeritocracia";
+import { gerarExtratoUmParaUmPdf } from "@/lib/extratoUmParaUm";
 
 export function TabelaAvaliacoesDetalhe({
   dados,
@@ -41,6 +47,42 @@ export function TabelaAvaliacoesDetalhe({
           error instanceof Error ? error.message : "Erro ao excluir avaliação.",
         );
       }
+    });
+  }
+
+  function gerarExtrato(item: AvaliacaoRelatorio) {
+    const itens = item.itens.map((criterio) => {
+      const atingimento = notaParaAtingimento(criterio.nota);
+      const faixa = encontrarFaixa(atingimento, FAIXAS_PADRAO);
+      const partePaga = faixa.multiplicadorPeso * 100;
+      const contribuicao = (criterio.peso * partePaga) / 100;
+      return {
+        criterioNome: criterio.criterioNome,
+        peso: criterio.peso,
+        nota: criterio.nota,
+        partePaga,
+        contribuicao,
+        justificativa: criterio.justificativa,
+        origem: criterio.origem,
+      };
+    });
+    const percentualAtingido = itens.reduce(
+      (total, criterio) => total + (criterio.contribuicao ?? 0),
+      0,
+    );
+    gerarExtratoUmParaUmPdf({
+      colaborador: item.colaborador,
+      cargo: item.cargo,
+      departamento: item.departamento,
+      competencia: item.competencia,
+      gestorResponsavel: item.gestorNome ?? "—",
+      notaFinal: item.notaFinal,
+      percentualAtingido,
+      valorFinalBonus:
+        item.valorAlvo != null
+          ? (item.valorAlvo * percentualAtingido) / 100
+          : null,
+      itens,
     });
   }
 
@@ -110,6 +152,13 @@ export function TabelaAvaliacoesDetalhe({
                         </button>
                         <button
                           type="button"
+                          onClick={() => gerarExtrato(item)}
+                          className="rounded-md px-2 py-1 text-xs font-medium text-brand-secondary hover:bg-zinc-100"
+                        >
+                          Gerar Extrato 1:1 (PDF)
+                        </button>
+                        <button
+                          type="button"
                           onClick={() => editar(item.id)}
                           className="rounded-md px-2 py-1 text-xs font-medium text-brand-secondary hover:bg-zinc-100"
                         >
@@ -129,6 +178,12 @@ export function TabelaAvaliacoesDetalhe({
                   {aberto ? (
                     <tr className="bg-zinc-50">
                       <td colSpan={8} className="px-3 py-3">
+                        <p className="mb-2 text-xs text-zinc-600">
+                          Avaliado por:{" "}
+                          <span className="font-semibold text-brand-secondary">
+                            {item.gestorNome ?? "—"}
+                          </span>
+                        </p>
                         {item.itens.length === 0 ? (
                           <p className="text-xs text-zinc-500">
                             Sem itens de critério nesta avaliação.
@@ -150,6 +205,9 @@ export function TabelaAvaliacoesDetalhe({
                                   <th className="px-3 py-2 font-semibold text-right">
                                     Contribuição
                                   </th>
+                                  <th className="px-3 py-2 font-semibold">
+                                    Justificativa
+                                  </th>
                                 </tr>
                               </thead>
                               <tbody className="divide-y divide-zinc-100">
@@ -157,6 +215,11 @@ export function TabelaAvaliacoesDetalhe({
                                   <tr key={criterio.criterioId}>
                                     <td className="px-3 py-2 font-medium text-zinc-800">
                                       {criterio.criterioNome}
+                                      {criterio.origem === "DEPARTAMENTO" ? (
+                                        <span className="ml-1 text-[10px] text-zinc-500">
+                                          (Coletivo)
+                                        </span>
+                                      ) : null}
                                     </td>
                                     <td className="px-3 py-2 text-right tabular-nums">
                                       {criterio.peso.toFixed(1)}%
@@ -176,6 +239,9 @@ export function TabelaAvaliacoesDetalhe({
                                     </td>
                                     <td className="px-3 py-2 text-right tabular-nums text-zinc-700">
                                       {criterio.pontos.toFixed(2)}
+                                    </td>
+                                    <td className="px-3 py-2 text-zinc-600">
+                                      {criterio.justificativa?.trim() || "—"}
                                     </td>
                                   </tr>
                                 ))}

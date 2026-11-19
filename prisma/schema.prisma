@@ -3,7 +3,7 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
@@ -12,10 +12,10 @@ model Departamento {
   nome     String
   criadoEm DateTime @default(now())
 
-  gestores             Gestor[]
-  colaboradores        Colaborador[]
-  criterios            CriterioAvaliacao[]
-  avaliacoesColetivas  AvaliacaoDepartamento[]
+  gestores            Gestor[]
+  colaboradores       Colaborador[]
+  criterios           CriterioAvaliacao[]
+  avaliacoesColetivas AvaliacaoDepartamento[]
 }
 
 model Gestor {
@@ -25,8 +25,10 @@ model Gestor {
   senha       String
   isDiretoria Boolean @default(false)
 
-  departamentos Departamento[]
-  avaliacoes    Avaliacao[]
+  departamentos          Departamento[]
+  avaliacoes             Avaliacao[]             @relation("AvaliacaoGestor")
+  avaliacoesAvaliadas    Avaliacao[]             @relation("AvaliacaoAvaliadoPor")
+  avaliacoesDepartamento AvaliacaoDepartamento[] @relation("AvaliacaoDepartamentoAvaliadoPor")
 }
 
 model Colaborador {
@@ -49,9 +51,9 @@ model CriterioAvaliacao {
   toleranciaZero Boolean @default(false)
   tipoAvaliacao  String  @default("INDIVIDUAL")
 
-  departamentos           Departamento[]
-  itens                   ItemAvaliacao[]
-  itensDepartamento       ItemAvaliacaoDepartamento[]
+  departamentos     Departamento[]
+  itens             ItemAvaliacao[]
+  itensDepartamento ItemAvaliacaoDepartamento[]
 }
 
 model FaixaPagamento {
@@ -67,23 +69,27 @@ model Avaliacao {
   data          DateTime @default(now())
   colaboradorId String
   gestorId      String
+  avaliadoPorId String?
   notaFinal     Float
   observacoes   String?
   mes           Int      @default(1)
   ano           Int      @default(2026)
+  updatedAt     DateTime @default(now()) @updatedAt
 
   colaborador Colaborador     @relation(fields: [colaboradorId], references: [id])
-  gestor      Gestor          @relation(fields: [gestorId], references: [id])
+  gestor      Gestor          @relation("AvaliacaoGestor", fields: [gestorId], references: [id])
+  avaliadoPor Gestor?         @relation("AvaliacaoAvaliadoPor", fields: [avaliadoPorId], references: [id])
   itens       ItemAvaliacao[]
 
   @@unique([colaboradorId, mes, ano])
 }
 
 model ItemAvaliacao {
-  id          String @id @default(cuid())
-  avaliacaoId String
-  criterioId  String
-  notaObtida  Float
+  id            String  @id @default(cuid())
+  avaliacaoId   String
+  criterioId    String
+  notaObtida    Float
+  justificativa String?
 
   avaliacao Avaliacao         @relation(fields: [avaliacaoId], references: [id])
   criterio  CriterioAvaliacao @relation(fields: [criterioId], references: [id])
@@ -94,21 +100,24 @@ model AvaliacaoDepartamento {
   departamentoId String
   mes            Int
   ano            Int
+  avaliadoPorId  String?
   createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  updatedAt      DateTime @default(now()) @updatedAt
 
-  departamento Departamento               @relation(fields: [departamentoId], references: [id])
+  departamento Departamento                @relation(fields: [departamentoId], references: [id])
+  avaliadoPor  Gestor?                     @relation("AvaliacaoDepartamentoAvaliadoPor", fields: [avaliadoPorId], references: [id])
   itens        ItemAvaliacaoDepartamento[]
 
   @@unique([departamentoId, mes, ano])
 }
 
 model ItemAvaliacaoDepartamento {
-  id                      String @id @default(cuid())
+  id                      String  @id @default(cuid())
   avaliacaoDepartamentoId String
   criterioId              String
   nota                    Float
   peso                    Float
+  justificativa           String?
 
   avaliacaoDepartamento AvaliacaoDepartamento @relation(fields: [avaliacaoDepartamentoId], references: [id])
   criterio              CriterioAvaliacao     @relation(fields: [criterioId], references: [id])

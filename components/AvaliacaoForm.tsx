@@ -12,7 +12,10 @@ import {
   SeletorNotaDegrau,
 } from "@/components/SeletorNotaDegrau";
 import { MESES } from "@/lib/competencia";
-import { calcularNotaFinalConsolidada } from "@/lib/avaliacaoConsolidada";
+import {
+  calcularNotaFinalConsolidada,
+  exigeJustificativa,
+} from "@/lib/avaliacaoConsolidada";
 import { classificarNota } from "@/lib/escala";
 
 type ColaboradorOption = {
@@ -41,6 +44,7 @@ type EdicaoInicial = {
   ano: number;
   observacoes: string;
   notas: Record<string, string>;
+  justificativas?: Record<string, string>;
 };
 
 type AvaliacaoFormProps = {
@@ -68,6 +72,9 @@ export function AvaliacaoForm({
   const [notas, setNotas] = useState<Record<string, string>>(
     edicaoInicial?.notas ?? {},
   );
+  const [justificativas, setJustificativas] = useState<Record<string, string>>(
+    edicaoInicial?.justificativas ?? {},
+  );
   const [observacoes, setObservacoes] = useState(
     edicaoInicial?.observacoes ?? "",
   );
@@ -81,6 +88,9 @@ export function AvaliacaoForm({
   const [notasColetivas, setNotasColetivas] = useState<
     Record<string, number>
   >({});
+  const [justColetivas, setJustColetivas] = useState<Record<string, string>>(
+    {},
+  );
   const [coletivasCarregadas, setColetivasCarregadas] = useState(false);
   const [pending, startTransition] = useTransition();
 
@@ -156,6 +166,7 @@ export function AvaliacaoForm({
     if (!colaboradorId) {
       setAvisoExistente(null);
       setNotasColetivas({});
+      setJustColetivas({});
       setColetivasCarregadas(false);
       return;
     }
@@ -168,12 +179,21 @@ export function AvaliacaoForm({
         if (!ativo) return;
         if (!coletiva) {
           setNotasColetivas({});
+          setJustColetivas({});
           setColetivasCarregadas(false);
           return;
         }
         setNotasColetivas(
           Object.fromEntries(
             coletiva.itens.map((item) => [item.criterioId, item.nota]),
+          ),
+        );
+        setJustColetivas(
+          Object.fromEntries(
+            coletiva.itens.map((item) => [
+              item.criterioId,
+              item.justificativa ?? "",
+            ]),
           ),
         );
         setColetivasCarregadas(true);
@@ -203,6 +223,14 @@ export function AvaliacaoForm({
             ]),
           ),
         );
+        setJustificativas(
+          Object.fromEntries(
+            existente.itens.map((item) => [
+              item.criterioId,
+              item.justificativa ?? "",
+            ]),
+          ),
+        );
         setObservacoes(existente.observacoes ?? "");
         setModoEdicao(true);
       }
@@ -218,6 +246,7 @@ export function AvaliacaoForm({
     const payload = criteriosIndividuais.map((criterio) => ({
       criterioId: criterio.id,
       notaObtida: Number(String(notas[criterio.id] ?? "").replace(",", ".")),
+      justificativa: justificativas[criterio.id] ?? "",
     }));
 
     startTransition(async () => {
@@ -253,6 +282,7 @@ export function AvaliacaoForm({
           : "Avaliação salva com sucesso.",
       );
       setNotas({});
+      setJustificativas({});
       setObservacoes("");
       setColaboradorId("");
       setAvaliacaoId("");
@@ -292,6 +322,7 @@ export function AvaliacaoForm({
     const payload = criteriosIndividuais.map((criterio) => ({
       criterioId: criterio.id,
       notaObtida: Number(String(notas[criterio.id] ?? "").replace(",", ".")),
+      justificativa: justificativas[criterio.id] ?? "",
     }));
 
     if (
@@ -304,6 +335,19 @@ export function AvaliacaoForm({
     ) {
       setErro("Informe uma nota de 0.0 a 10.0 para todos os critérios individuais.");
       return;
+    }
+
+    for (const criterio of criteriosIndividuais) {
+      const nota = Number(String(notas[criterio.id] ?? "").replace(",", "."));
+      if (
+        exigeJustificativa(nota, Boolean(criterio.toleranciaZero)) &&
+        !String(justificativas[criterio.id] ?? "").trim()
+      ) {
+        setErro(
+          `Justificativa obrigatória para "${criterio.nome}" (nota < 10.0).`,
+        );
+        return;
+      }
     }
 
     executarSalvar(Boolean(avisoExistente) || modoEdicao);
@@ -359,27 +403,29 @@ export function AvaliacaoForm({
         </div>
       </section>
 
-      <section className="rounded-lg border border-zinc-200 bg-white p-5 shadow-sm">
-        <h2 className="mb-1 text-sm font-semibold uppercase tracking-wide text-brand-secondary">
-          Régua de Degraus (Bônus)
+      <section className="overflow-hidden rounded-lg border border-zinc-200 bg-white shadow-sm">
+        <h2 className="bg-brand-secondary px-5 py-3 text-sm font-semibold uppercase tracking-wide text-white">
+          Régua de Degraus de Bônus
         </h2>
-        <p className="mb-3 text-xs text-zinc-500">
-          Atingimento da meta → parte do peso paga no bônus.
-        </p>
-        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-          {LEGENDA_REGUA_DEGRAUS.map((item) => (
-            <div
-              key={item.atingimento}
-              className="flex items-center justify-between gap-2 rounded-md border border-zinc-100 border-l-4 border-l-brand-primary px-3 py-2"
-            >
-              <span className="text-xs font-semibold text-brand-secondary">
-                {item.atingimento}
-              </span>
-              <span className="rounded-full bg-brand-secondary px-2 py-0.5 text-[11px] font-semibold text-white">
-                {item.parte}
-              </span>
-            </div>
-          ))}
+        <div className="p-5">
+          <p className="mb-3 text-xs text-zinc-500">
+            Atingimento da meta → parte do peso paga no bônus.
+          </p>
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            {LEGENDA_REGUA_DEGRAUS.map((item) => (
+              <div
+                key={item.atingimento}
+                className="flex items-center justify-between gap-2 rounded-md border border-zinc-100 border-l-4 border-l-brand-primary px-3 py-2.5"
+              >
+                <span className="text-xs font-semibold text-brand-secondary">
+                  {item.atingimento}
+                </span>
+                <span className="rounded-full bg-brand-secondary px-2.5 py-0.5 text-[11px] font-semibold text-white">
+                  {item.parte}
+                </span>
+              </div>
+            ))}
+          </div>
         </div>
       </section>
 
@@ -396,6 +442,7 @@ export function AvaliacaoForm({
             onChange={(event) => {
               setColaboradorId(event.target.value);
               setNotas({});
+              setJustificativas({});
               setObservacoes("");
               setAvaliacaoId("");
               setModoEdicao(false);
@@ -478,6 +525,14 @@ export function AvaliacaoForm({
                     readOnly
                   />
                 </div>
+                {justColetivas[criterio.id]?.trim() ? (
+                  <p className="mt-3 rounded-md border border-zinc-200 bg-white px-3 py-2 text-xs text-zinc-600">
+                    <span className="font-semibold text-brand-secondary">
+                      Justificativa / Evidência:{" "}
+                    </span>
+                    {justColetivas[criterio.id]}
+                  </p>
+                ) : null}
               </div>
             ))}
 
@@ -486,53 +541,93 @@ export function AvaliacaoForm({
                 Nenhum critério individual para este departamento.
               </div>
             ) : (
-              itensIndividuais.map(({ criterio, parcial }) => (
-                <div
-                  key={criterio.id}
-                  className="rounded-lg border border-zinc-200 border-l-4 border-l-brand-primary bg-white p-5 shadow-sm"
-                >
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div className="min-w-0 flex-1">
-                      <h3 className="text-sm font-semibold text-zinc-900">
-                        {criterio.nome}
-                      </h3>
-                      <p className="mt-0.5 text-xs text-zinc-500">
-                        Peso: {criterio.peso.toFixed(1)}% · Individual
-                        {criterio.toleranciaZero ? " · Tolerância zero" : ""}
-                      </p>
-                      {criterio.descricao ? (
-                        <div className="mt-3 rounded-md border-l-4 border-l-brand-secondary bg-zinc-50 px-3 py-2 text-xs leading-relaxed text-zinc-600">
-                          {criterio.descricao}
-                        </div>
-                      ) : null}
+              itensIndividuais.map(({ criterio, parcial }) => {
+                const notaNum = Number(
+                  String(notas[criterio.id] ?? "").replace(",", "."),
+                );
+                const obrigatoria =
+                  Number.isFinite(notaNum) &&
+                  exigeJustificativa(
+                    notaNum,
+                    Boolean(criterio.toleranciaZero),
+                  );
+                return (
+                  <div
+                    key={criterio.id}
+                    className="rounded-lg border border-zinc-200 border-l-4 border-l-brand-primary bg-white p-5 shadow-sm"
+                  >
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div className="min-w-0 flex-1">
+                        <h3 className="text-sm font-semibold text-zinc-900">
+                          {criterio.nome}
+                        </h3>
+                        <p className="mt-0.5 text-xs text-zinc-500">
+                          Peso: {criterio.peso.toFixed(1)}% · Individual
+                          {criterio.toleranciaZero ? " · Tolerância zero" : ""}
+                        </p>
+                        {criterio.descricao ? (
+                          <div className="mt-3 rounded-md border-l-4 border-l-brand-secondary bg-zinc-50 px-3 py-2 text-xs leading-relaxed text-zinc-600">
+                            {criterio.descricao}
+                          </div>
+                        ) : null}
+                      </div>
+                      <div className="rounded-md bg-zinc-100 px-3 py-1.5 text-right">
+                        <p className="text-[11px] uppercase tracking-wide text-zinc-500">
+                          Contribuição
+                        </p>
+                        <p className="text-sm font-semibold text-zinc-900">
+                          {parcial.toFixed(2)}
+                        </p>
+                      </div>
                     </div>
-                    <div className="rounded-md bg-zinc-100 px-3 py-1.5 text-right">
-                      <p className="text-[11px] uppercase tracking-wide text-zinc-500">
-                        Contribuição
-                      </p>
-                      <p className="text-sm font-semibold text-zinc-900">
-                        {parcial.toFixed(2)}
-                      </p>
-                    </div>
-                  </div>
 
-                  <div className="mt-4">
-                    <p className="mb-2 text-sm font-medium text-zinc-700">
-                      Resultado / Atingimento
-                    </p>
-                    <SeletorNotaDegrau
-                      valor={notas[criterio.id] ?? ""}
-                      onChange={(nota) =>
-                        setNotas((atual) => ({
-                          ...atual,
-                          [criterio.id]: nota,
-                        }))
-                      }
-                      toleranciaZero={Boolean(criterio.toleranciaZero)}
-                    />
+                    <div className="mt-4">
+                      <p className="mb-2 text-sm font-medium text-zinc-700">
+                        Resultado / Atingimento
+                      </p>
+                      <SeletorNotaDegrau
+                        valor={notas[criterio.id] ?? ""}
+                        onChange={(nota) =>
+                          setNotas((atual) => ({
+                            ...atual,
+                            [criterio.id]: nota,
+                          }))
+                        }
+                        toleranciaZero={Boolean(criterio.toleranciaZero)}
+                      />
+                    </div>
+
+                    <label className="mt-3 block space-y-1.5">
+                      <span className="text-sm font-medium text-zinc-700">
+                        Justificativa / Evidência
+                        {obrigatoria ? (
+                          <span className="ml-1 text-brand-primary">*</span>
+                        ) : null}
+                      </span>
+                      <textarea
+                        value={justificativas[criterio.id] ?? ""}
+                        onChange={(e) =>
+                          setJustificativas((atual) => ({
+                            ...atual,
+                            [criterio.id]: e.target.value,
+                          }))
+                        }
+                        rows={2}
+                        placeholder={
+                          obrigatoria
+                            ? "Obrigatório para nota abaixo de 10.0"
+                            : "Opcional"
+                        }
+                        className={`w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-zinc-200 ${
+                          obrigatoria
+                            ? "border-brand-primary/40"
+                            : "border-zinc-300"
+                        }`}
+                      />
+                    </label>
                   </div>
-                </div>
-              ))
+                );
+              })
             )}
           </section>
 

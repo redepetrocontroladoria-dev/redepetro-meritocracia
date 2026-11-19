@@ -99,6 +99,12 @@ export default async function AvaliarPage({ searchParams }: AvaliarPageProps) {
                     String(item.notaObtida),
                   ]),
                 ),
+                justificativas: Object.fromEntries(
+                  edicao.itens.map((item) => [
+                    item.criterioId,
+                    item.justificativa ?? "",
+                  ]),
+                ),
               }
             : null
         }

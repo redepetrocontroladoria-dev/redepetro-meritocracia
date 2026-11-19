@@ -67,6 +67,8 @@ export default async function BonusPage({ searchParams }: BonusPageProps) {
         avaliacoes: {
           where: { mes, ano },
           include: {
+            avaliadoPor: { select: { nome: true } },
+            gestor: { select: { nome: true } },
             itens: {
               include: {
                 criterio: {
@@ -119,6 +121,7 @@ export default async function BonusPage({ searchParams }: BonusPageProps) {
         peso: item.peso || item.criterio.peso,
         nota: item.nota,
         toleranciaZero: item.criterio.toleranciaZero,
+        justificativa: item.justificativa,
       })),
     ]),
   );
@@ -131,6 +134,7 @@ export default async function BonusPage({ searchParams }: BonusPageProps) {
       peso: item.criterio.peso,
       nota: item.notaObtida,
       toleranciaZero: item.criterio.toleranciaZero,
+      justificativa: item.justificativa,
     }));
     const coletivos = coletivosPorDept.get(colaborador.departamentoId) ?? [];
     const itens = consolidarItensAvaliacao(individuais, coletivos).map(
@@ -140,6 +144,8 @@ export default async function BonusPage({ searchParams }: BonusPageProps) {
         peso: item.peso,
         nota: item.nota,
         toleranciaZero: Boolean(item.toleranciaZero),
+        justificativa: item.justificativa,
+        origem: item.origem,
       }),
     );
     return {
@@ -149,6 +155,7 @@ export default async function BonusPage({ searchParams }: BonusPageProps) {
       departamento: colaborador.departamento.nome,
       valorAlvo: colaborador.valorAlvo,
       temAvaliacao: Boolean(avaliacao),
+      gestorNome: avaliacao?.avaliadoPor?.nome ?? avaliacao?.gestor?.nome ?? null,
       itens,
     };
   });

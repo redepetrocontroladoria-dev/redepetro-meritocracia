@@ -14,6 +14,8 @@ export type ItemCriterioRelatorio = {
   peso: number;
   nota: number;
   pontos: number;
+  justificativa?: string | null;
+  origem?: "INDIVIDUAL" | "DEPARTAMENTO";
 };
 
 export type AvaliacaoRelatorio = {
@@ -29,6 +31,8 @@ export type AvaliacaoRelatorio = {
   classificacao: string;
   variacaoBadgeClass?: string;
   faixaBadgeClass?: string;
+  gestorNome?: string | null;
+  valorAlvo?: number | null;
   itens: ItemCriterioRelatorio[];
 };
 

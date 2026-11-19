@@ -1,9 +1,12 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 import { Geist, Geist_Mono } from "next/font/google";
 import { getSessionGestor } from "@/actions/auth";
 import { AppShell } from "@/components/AppShell";
 import { Nav } from "@/components/Nav";
 import "./globals.css";
+
+export const instant = false;
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -20,9 +23,17 @@ export const metadata: Metadata = {
   description: "Gestão de avaliações e meritocracia",
 };
 
-export default async function RootLayout({ children }: LayoutProps<"/">) {
+async function NavAutenticada() {
   const gestor = await getSessionGestor();
+  return (
+    <Nav
+      isDiretoria={gestor?.isDiretoria ?? false}
+      nomeGestor={gestor?.nome}
+    />
+  );
+}
 
+export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html
       lang="pt-BR"
@@ -31,10 +42,9 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
       <body className="flex min-h-full flex-col bg-brand-background text-brand-secondary">
         <AppShell
           nav={
-            <Nav
-              isDiretoria={gestor?.isDiretoria ?? false}
-              nomeGestor={gestor?.nome}
-            />
+            <Suspense fallback={<Nav isDiretoria={false} />}>
+              <NavAutenticada />
+            </Suspense>
           }
         >
           {children}
